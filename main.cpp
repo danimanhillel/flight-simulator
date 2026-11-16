@@ -11,16 +11,19 @@ const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 128;
 const float TILE_WORLD_SIZE = 400.0f;
-const int TILES_AROUND = 2;       // 5x5 matrix (-2 to +2)
+const int TILES_AROUND = 2;       // 5x5
 
-float posX = 0.0f, posY = 60.0f, posZ = 0.0f;
+float posX = 0.0f, posY = 80.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
-float speed = 0.0f;               // starts stopped
+float speed = 0.0f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
+// Seamless noise helpers (periodic)
 float noise(int x, int y) {
+    x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
+    y = (y % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
     int n = x + y * 57;
     n = (n << 13) ^ n;
     return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
@@ -34,8 +37,8 @@ float smoothNoise(int x, int y) {
 }
 
 float interpolatedNoise(float x, float y) {
-    int ix = (int)x;
-    int iy = (int)y;
+    int ix = (int)std::floor(x);
+    int iy = (int)std::floor(y);
     float fx = x - ix;
     float fy = y - iy;
     float v1 = smoothNoise(ix, iy);
@@ -68,9 +71,16 @@ void generateHeightmap() {
             float ny = y / (float)TERRAIN_SIZE * 4.0f;
             float h = fractalNoise(nx, ny, 5);
             h = std::pow(std::abs(h), 1.3f) * (h > 0 ? 1.0f : -1.0f);
-            heightmap[y * TERRAIN_SIZE + x] = h * 50.0f + 10.0f;
+            // Height influence doubled (was 50, now 100)
+            heightmap[y * TERRAIN_SIZE + x] = h * 100.0f + 10.0f;
         }
     }
+    // Force exact seamless edges
+    for (int i = 0; i < TERRAIN_SIZE; ++i) {
+        heightmap[i] = heightmap[i + (TERRAIN_SIZE-1)*TERRAIN_SIZE]; // top = bottom
+        heightmap[i * TERRAIN_SIZE] = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE-1)]; // left = right
+    }
+    heightmap[0] = heightmap[(TERRAIN_SIZE-1)*TERRAIN_SIZE + (TERRAIN_SIZE-1)];
 }
 
 float getHeight(float worldX, float worldZ) {
@@ -82,16 +92,14 @@ float getHeight(float worldX, float worldZ) {
     float u = tileX / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
     float v = tileZ / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
 
-    int x0 = (int)u;
-    int y0 = (int)v;
-    float fx = u - x0;
-    float fy = v - y0;
+    int x0 = (int)u % TERRAIN_SIZE;
+    int y0 = (int)v % TERRAIN_SIZE;
+    float fx = u - (int)u;
+    float fy = v - (int)v;
 
     auto sample = [&](int x, int y) {
-        if (x < 0) x = 0;
-        if (x >= TERRAIN_SIZE) x = TERRAIN_SIZE - 1;
-        if (y < 0) y = 0;
-        if (y >= TERRAIN_SIZE) y = TERRAIN_SIZE - 1;
+        x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
+        y = (y % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
         return heightmap[y * TERRAIN_SIZE + x];
     };
 
@@ -106,20 +114,20 @@ float getHeight(float worldX, float worldZ) {
 }
 
 void colorFromHeight(float h, float& r, float& g, float& b) {
-    if (h < 18.0f) {
+    if (h < 30.0f) {
         r = 0.22f; g = 0.55f; b = 0.22f;
-    } else if (h < 32.0f) {
-        float t = (h - 18.0f) / 14.0f;
+    } else if (h < 55.0f) {
+        float t = (h - 30.0f) / 25.0f;
         r = 0.22f + t * 0.28f;
         g = 0.55f - t * 0.12f;
         b = 0.22f - t * 0.08f;
-    } else if (h < 45.0f) {
-        float t = (h - 32.0f) / 13.0f;
+    } else if (h < 80.0f) {
+        float t = (h - 55.0f) / 25.0f;
         r = 0.5f + t * 0.18f;
         g = 0.43f + t * 0.12f;
         b = 0.35f + t * 0.12f;
     } else {
-        float t = std::min(1.0f, (h - 45.0f) / 20.0f);
+        float t = std::min(1.0f, (h - 80.0f) / 40.0f);
         r = 0.68f + t * 0.25f;
         g = 0.62f + t * 0.25f;
         b = 0.55f + t * 0.3f;
@@ -173,10 +181,10 @@ void drawSky() {
     glDisable(GL_LIGHTING);
     glBegin(GL_QUADS);
     glColor3f(0.5f, 0.75f, 0.95f);
-    glVertex3f(-6000, 600, -6000);
-    glVertex3f( 6000, 600, -6000);
-    glVertex3f( 6000, 600,  6000);
-    glVertex3f(-6000, 600,  6000);
+    glVertex3f(-6000, 700, -6000);
+    glVertex3f( 6000, 700, -6000);
+    glVertex3f( 6000, 700,  6000);
+    glVertex3f(-6000, 700,  6000);
     glEnd();
     glEnable(GL_DEPTH_TEST);
 }
@@ -225,18 +233,15 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate = -controlRate * 0.55f;
         if (keys[SDL_SCANCODE_X]) yawRate =  controlRate * 0.55f;
 
-        // + forward, - backward
         if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
             speed += 0.08f;
         }
         if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
             speed -= 0.08f;
         }
-        // limit speed
         if (speed > 12.0f) speed = 12.0f;
         if (speed < -6.0f) speed = -6.0f;
 
-        // mild speed damping when no input
         if (!keys[SDL_SCANCODE_EQUALS] && !keys[SDL_SCANCODE_KP_PLUS] &&
             !keys[SDL_SCANCODE_MINUS] && !keys[SDL_SCANCODE_KP_MINUS]) {
             speed *= 0.98f;
@@ -264,7 +269,7 @@ int main(int argc, char* argv[]) {
         posZ += forwardZ * speed;
 
         float groundH = getHeight(posX, posZ);
-        if (posY < groundH + 6.0f) posY = groundH + 6.0f;
+        if (posY < groundH + 8.0f) posY = groundH + 8.0f;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
