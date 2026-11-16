@@ -153,17 +153,11 @@ void drawSphere(float radius, int slices, int stacks) {
             float x = std::cos(lng);
             float y = std::sin(lng);
 
-            // Rotate UV by 90 degrees so seams are top/bottom
-            float u0 = (float)i / stacks;
-            float v0 = (float)j / slices;
-            float u1 = (float)(i + 1) / stacks;
-            float v1 = (float)j / slices;
-
-            glTexCoord2f(u0, v0);
+            glTexCoord2f((float)j / slices, (float)i / stacks);
             glNormal3f(x * zr0, y * zr0, z0);
             glVertex3f(x * zr0 * radius, y * zr0 * radius, z0 * radius);
 
-            glTexCoord2f(u1, v1);
+            glTexCoord2f((float)j / slices, (float)(i + 1) / stacks);
             glNormal3f(x * zr1, y * zr1, z1);
             glVertex3f(x * zr1 * radius, y * zr1 * radius, z1 * radius);
         }
@@ -234,6 +228,8 @@ void drawSky() {
     glRotatef(-pitch, 1, 0, 0);
     glRotatef(-yaw,   0, 1, 0);
 
+    // Rotate sphere so poles are up/down
+    glRotatef(90.0f, 1, 0, 0);
     drawSphere(4000.0f, 32, 16);
 
     glPopMatrix();
@@ -296,7 +292,6 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
         if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        // Mouse axes inverted
         rollRate  -= mouseXRel * mouseSensitivity * 8.0f;
         pitchRate -= mouseYRel * mouseSensitivity * 5.0f;
 
