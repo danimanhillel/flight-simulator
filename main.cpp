@@ -124,12 +124,12 @@ void loadTexture() {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    // Use GL_LINEAR instead of mipmap for compatibility with legacy OpenGL
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, surface->w, surface->h, 0,
                  GL_RGB, GL_UNSIGNED_BYTE, surface->pixels);
-    glGenerateMipmap(GL_TEXTURE_2D);
 
     SDL_FreeSurface(surface);
 }
@@ -166,7 +166,6 @@ void drawTerrain() {
                         float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
                         float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
                         float h = getHeight(wx, wz);
-                        // Texture coordinates that repeat across tiles
                         float tu = (wx / TILE_WORLD_SIZE);
                         float tv = (wz / TILE_WORLD_SIZE);
                         glTexCoord2f(tu, tv);
@@ -255,7 +254,6 @@ int main(int argc, char* argv[]) {
             accelerating = true;
         }
 
-        // Sticky max speed: once at max, stay there until decelerating
         if (speed > MAX_SPEED) speed = MAX_SPEED;
         if (speed < -4.0f) speed = -4.0f;
 
