@@ -9,20 +9,17 @@
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
-const int TERRAIN_SIZE = 128;      // lower res for faster/clearer drawing
-const float TILE_WORLD_SIZE = 400.0f;  // smaller tiles so more detail nearby
-const int TILES_AROUND = 10;       // 20x20 matrix (-10 to +10)
+const int TERRAIN_SIZE = 128;
+const float TILE_WORLD_SIZE = 400.0f;
+const int TILES_AROUND = 2;       // 5x5 matrix (-2 to +2)
 
-// Aircraft state - start lower and closer to ground
 float posX = 0.0f, posY = 60.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
-float speed = 1.5f;
+float speed = 0.0f;               // starts stopped
 float pitchRate = 0, yawRate = 0, rollRate = 0;
 
-// Heightmap
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
-// Simple value noise for heightmap
 float noise(int x, int y) {
     int n = x + y * 57;
     n = (n << 13) ^ n;
@@ -71,7 +68,7 @@ void generateHeightmap() {
             float ny = y / (float)TERRAIN_SIZE * 4.0f;
             float h = fractalNoise(nx, ny, 5);
             h = std::pow(std::abs(h), 1.3f) * (h > 0 ? 1.0f : -1.0f);
-            heightmap[y * TERRAIN_SIZE + x] = h * 50.0f + 10.0f; // more visible height range
+            heightmap[y * TERRAIN_SIZE + x] = h * 50.0f + 10.0f;
         }
     }
 }
@@ -147,7 +144,7 @@ void drawTerrain() {
             float originZ = tz * TILE_WORLD_SIZE;
 
             glBegin(GL_TRIANGLES);
-            const int step = 2; // denser for clearer look
+            const int step = 2;
             for (int y = 0; y < TERRAIN_SIZE - step; y += step) {
                 for (int x = 0; x < TERRAIN_SIZE - step; x += step) {
                     auto emit = [&](int ix, int iy) {
@@ -176,10 +173,10 @@ void drawSky() {
     glDisable(GL_LIGHTING);
     glBegin(GL_QUADS);
     glColor3f(0.5f, 0.75f, 0.95f);
-    glVertex3f(-8000, 600, -8000);
-    glVertex3f( 8000, 600, -8000);
-    glVertex3f( 8000, 600,  8000);
-    glVertex3f(-8000, 600,  8000);
+    glVertex3f(-6000, 600, -6000);
+    glVertex3f( 6000, 600, -6000);
+    glVertex3f( 6000, 600,  6000);
+    glVertex3f(-6000, 600,  6000);
     glEnd();
     glEnable(GL_DEPTH_TEST);
 }
@@ -228,10 +225,22 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate = -controlRate * 0.55f;
         if (keys[SDL_SCANCODE_X]) yawRate =  controlRate * 0.55f;
 
-        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed += 0.04f;
-        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed -= 0.04f;
-        if (speed < 0.4f) speed = 0.4f;
+        // + forward, - backward
+        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
+            speed += 0.08f;
+        }
+        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
+            speed -= 0.08f;
+        }
+        // limit speed
         if (speed > 12.0f) speed = 12.0f;
+        if (speed < -6.0f) speed = -6.0f;
+
+        // mild speed damping when no input
+        if (!keys[SDL_SCANCODE_EQUALS] && !keys[SDL_SCANCODE_KP_PLUS] &&
+            !keys[SDL_SCANCODE_MINUS] && !keys[SDL_SCANCODE_KP_MINUS]) {
+            speed *= 0.98f;
+        }
 
         float dt = 0.016f;
         roll  += rollRate * dt;
@@ -263,7 +272,7 @@ int main(int argc, char* argv[]) {
         glLoadIdentity();
         float aspect = (float)WIDTH / HEIGHT;
         float fov = 55.0f * 3.14159265f / 180.0f;
-        float nearP = 0.5f, farP = 12000.0f;
+        float nearP = 0.5f, farP = 8000.0f;
         float top = nearP * std::tan(fov / 2);
         float bottom = -top;
         float right = top * aspect;
