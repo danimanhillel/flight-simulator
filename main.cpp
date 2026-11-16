@@ -175,6 +175,31 @@ void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
+    float radYaw = yaw * 3.14159265f / 180.0f;
+    float forwardX = std::sin(radYaw);
+    float forwardZ = std::cos(radYaw);
+
+    int rearTX = centerTileX, rearTZ = centerTileZ;
+    float bestRearDist = 1e9f;
+    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
+        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
+            float tileCenterX = (tx + 0.5f) * TILE_WORLD_SIZE;
+            float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
+            float toTileX = tileCenterX - posX;
+            float toTileZ = tileCenterZ - posZ;
+            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
+            if (len < 1.0f) len = 1.0f;
+            float nX = toTileX / len;
+            float nZ = toTileZ / len;
+            float dot = nX * forwardX + nZ * forwardZ;
+            if (dot > 0.0f && len < bestRearDist) {
+                bestRearDist = len;
+                rearTX = tx;
+                rearTZ = tz;
+            }
+        }
+    }
+
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
@@ -192,6 +217,20 @@ void drawTerrain() {
 
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
         for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
+            float tileCenterX = (tx + 0.5f) * TILE_WORLD_SIZE;
+            float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
+
+            float toTileX = tileCenterX - posX;
+            float toTileZ = tileCenterZ - posZ;
+            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
+            if (len < 1.0f) len = 1.0f;
+            toTileX /= len;
+            toTileZ /= len;
+
+            float dot = toTileX * forwardX + toTileZ * forwardZ;
+            bool keep = (dot <= 0.15f) || (tx == rearTX && tz == rearTZ);
+            if (!keep) continue;
+
             float originX = tx * TILE_WORLD_SIZE - TILE_OVERLAP;
             float originZ = tz * TILE_WORLD_SIZE - TILE_OVERLAP;
             float tileSize = TILE_WORLD_SIZE + 2.0f * TILE_OVERLAP;
