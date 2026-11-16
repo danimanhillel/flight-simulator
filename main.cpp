@@ -13,10 +13,11 @@
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
-const int TERRAIN_SIZE = 64;
+const int TERRAIN_SIZE = 128;
 const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 3;
 const float MAX_HEIGHT = 100.0f;
+const float HEIGHT_SCALE = 80.0f;
 
 float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -30,64 +31,50 @@ bool showMenu = false;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
-float noise(int x, int y) {
-    x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
-    y = (y % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
-    int n = x + y * 57;
-    n = (n << 13) ^ n;
-    return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
-}
-
-float smoothNoise(int x, int y) {
-    float corners = (noise(x-1, y-1) + noise(x+1, y-1) + noise(x-1, y+1) + noise(x+1, y+1)) / 16.0f;
-    float sides   = (noise(x-1, y) + noise(x+1, y) + noise(x, y-1) + noise(x, y+1)) / 8.0f;
-    float center  = noise(x, y) / 4.0f;
-    return corners + sides + center;
-}
-
-float interpolatedNoise(float x, float y) {
-    int ix = (int)std::floor(x);
-    int iy = (int)std::floor(y);
-    float fx = x - ix;
-    float fy = y - iy;
-    float v1 = smoothNoise(ix, iy);
-    float v2 = smoothNoise(ix+1, iy);
-    float v3 = smoothNoise(ix, iy+1);
-    float v4 = smoothNoise(ix+1, iy+1);
-    float i1 = v1 * (1-fx) + v2 * fx;
-    float i2 = v3 * (1-fx) + v4 * fx;
-    return i1 * (1-fy) + i2 * fy;
-}
-
-float fractalNoise(float x, float y, int octaves) {
-    float total = 0.0f;
-    float frequency = 1.0f;
-    float amplitude = 1.0f;
-    float maxValue = 0.0f;
-    for (int i = 0; i < octaves; ++i) {
-        total += interpolatedNoise(x * frequency, y * frequency) * amplitude;
-        maxValue += amplitude;
-        amplitude *= 0.5f;
-        frequency *= 2.0f;
+void loadHeightmap(const char* filename) {
+    int w, h, channels;
+    unsigned char* data = stbi_load(filename, &w, &h, &channels, 1);
+    if (!data) {
+        std::cerr << "Failed to load heightmap: " << stbi_failure_reason() << std::endl;
+        // Fallback flat
+        for (auto& v : heightmap) v = 10.0f;
+        return;
     }
-    return total / maxValue;
-}
 
-void generateHeightmap() {
     for (int y = 0; y < TERRAIN_SIZE; ++y) {
         for (int x = 0; x < TERRAIN_SIZE; ++x) {
-            float nx = x / (float)TERRAIN_SIZE * 5.0f;
-            float ny = y / (float)TERRAIN_SIZE * 5.0f;
-            float h = fractalNoise(nx, ny, 7);
-            h = std::pow(std::abs(h), 1.15f) * (h > 0 ? 1.0f : -1.0f);
-            heightmap[y * TERRAIN_SIZE + x] = h * 160.0f + 8.0f;
+            float u = x / (float)(TERRAIN_SIZE - 1);
+            float v = y / (float)(TERRAIN_SIZE - 1);
+            int ix = std::min(w - 1, (int)(u * w));
+            int iy = std::min(h - 1, (int)(v * h));
+            float gray = data[iy * w + ix] / 255.0f;
+            heightmap[y * TERRAIN_SIZE + x] = gray * HEIGHT_SCALE;
         }
     }
+    stbi_image_free(data);
+
+    // Force seamless edges: average opposite edges
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
-        heightmap[i] = heightmap[i + (TERRAIN_SIZE-1)*TERRAIN_SIZE];
-        heightmap[i * TERRAIN_SIZE] = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE-1)];
+        float top = heightmap[i];
+        float bottom = heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + i];
+        float avg = (top + bottom) * 0.5f;
+        heightmap[i] = avg;
+        heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + i] = avg;
+
+        float left = heightmap[i * TERRAIN_SIZE];
+        float right = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1)];
+        avg = (left + right) * 0.5f;
+        heightmap[i * TERRAIN_SIZE] = avg;
+        heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1)] = avg;
     }
-    heightmap[0] = heightmap[(TERRAIN_SIZE-1)*TERRAIN_SIZE + (TERRAIN_SIZE-1)];
+    // Corner
+    float corner = (heightmap[0] + heightmap[TERRAIN_SIZE - 1] +
+                    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE] +
+                    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + TERRAIN_SIZE - 1]) * 0.25f;
+    heightmap[0] = corner;
+    heightmap[TERRAIN_SIZE - 1] = corner;
+    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE] = corner;
+    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + TERRAIN_SIZE - 1] = corner;
 }
 
 float getHeight(float worldX, float worldZ) {
@@ -99,10 +86,10 @@ float getHeight(float worldX, float worldZ) {
     float u = tileX / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
     float v = tileZ / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
 
-    int x0 = (int)std::floor(u) % TERRAIN_SIZE;
-    int y0 = (int)std::floor(v) % TERRAIN_SIZE;
-    float fx = u - std::floor(u);
-    float fy = v - std::floor(v);
+    int x0 = (int)std::floor(u);
+    int y0 = (int)std::floor(v);
+    float fx = u - x0;
+    float fy = v - y0;
 
     auto sample = [&](int x, int y) {
         x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
@@ -111,13 +98,13 @@ float getHeight(float worldX, float worldZ) {
     };
 
     float h00 = sample(x0, y0);
-    float h10 = sample(x0+1, y0);
-    float h01 = sample(x0, y0+1);
-    float h11 = sample(x0+1, y0+1);
+    float h10 = sample(x0 + 1, y0);
+    float h01 = sample(x0, y0 + 1);
+    float h11 = sample(x0 + 1, y0 + 1);
 
-    float h0 = h00 * (1-fx) + h10 * fx;
-    float h1 = h01 * (1-fx) + h11 * fx;
-    return h0 * (1-fy) + h1 * fy;
+    float h0 = h00 * (1 - fx) + h10 * fx;
+    float h1 = h01 * (1 - fx) + h11 * fx;
+    return h0 * (1 - fy) + h1 * fy;
 }
 
 void loadTexture(const char* filename, GLuint& textureID) {
@@ -178,7 +165,6 @@ void drawTerrain() {
     float forwardX = std::sin(radYaw);
     float forwardZ = std::cos(radYaw);
 
-    // Find the closest rear tile
     int rearTX = centerTileX, rearTZ = centerTileZ;
     float bestRearDist = 1e9f;
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
@@ -187,7 +173,7 @@ void drawTerrain() {
             float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
             float toTileX = tileCenterX - posX;
             float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
+            float len = std::sqrt(toTileX * toTileX + toTileZ * toTileZ);
             if (len < 1.0f) len = 1.0f;
             float nX = toTileX / len;
             float nZ = toTileZ / len;
@@ -222,14 +208,12 @@ void drawTerrain() {
 
             float toTileX = tileCenterX - posX;
             float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
+            float len = std::sqrt(toTileX * toTileX + toTileZ * toTileZ);
             if (len < 1.0f) len = 1.0f;
             toTileX /= len;
             toTileZ /= len;
 
             float dot = toTileX * forwardX + toTileZ * forwardZ;
-
-            // Keep front tiles + the single closest rear tile
             bool keep = (dot <= 0.2f) || (tx == rearTX && tz == rearTZ);
             if (!keep) continue;
 
@@ -237,12 +221,12 @@ void drawTerrain() {
             float originZ = tz * TILE_WORLD_SIZE;
 
             glBegin(GL_TRIANGLES);
-            const int step = 1;
+            const int step = 2;
             for (int y = 0; y < TERRAIN_SIZE - step; y += step) {
                 for (int x = 0; x < TERRAIN_SIZE - step; x += step) {
                     auto emit = [&](int ix, int iy) {
-                        float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
-                        float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
+                        float wx = originX + (ix / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
+                        float wz = originZ + (iy / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
                         float h = getHeight(wx, wz);
                         float tu = (wx / TILE_WORLD_SIZE);
                         float tv = (wz / TILE_WORLD_SIZE);
@@ -251,8 +235,8 @@ void drawTerrain() {
                         glVertex3f(wx, h, wz);
                     };
 
-                    emit(x, y); emit(x, y+step); emit(x+step, y);
-                    emit(x+step, y); emit(x, y+step); emit(x+step, y+step);
+                    emit(x, y); emit(x, y + step); emit(x + step, y);
+                    emit(x + step, y); emit(x, y + step); emit(x + step, y + step);
                 }
             }
             glEnd();
@@ -271,13 +255,11 @@ void drawSky() {
 
     glPushMatrix();
     glLoadIdentity();
-    glRotatef(-roll,  0, 0, 1);
+    glRotatef(-roll, 0, 0, 1);
     glRotatef(-pitch, 1, 0, 0);
-    glRotatef(-yaw,   0, 1, 0);
-
+    glRotatef(-yaw, 0, 1, 0);
     glRotatef(90.0f, 1, 0, 0);
     drawSphere(4000.0f, 32, 16);
-
     glPopMatrix();
     glDisable(GL_TEXTURE_2D);
     glEnable(GL_DEPTH_TEST);
@@ -293,16 +275,9 @@ void drawDigit(float x, float y, int digit, float size) {
         }
     };
     bool s[10][7] = {
-        {1,1,1,1,1,1,0},
-        {0,1,1,0,0,0,0},
-        {1,1,0,1,1,0,1},
-        {1,1,1,1,0,0,1},
-        {0,1,1,0,0,1,1},
-        {1,0,1,1,0,1,1},
-        {1,0,1,1,1,1,1},
-        {1,1,1,0,0,0,0},
-        {1,1,1,1,1,1,1},
-        {1,1,1,1,0,1,1}
+        {1,1,1,1,1,1,0}, {0,1,1,0,0,0,0}, {1,1,0,1,1,0,1}, {1,1,1,1,0,0,1},
+        {0,1,1,0,0,1,1}, {1,0,1,1,0,1,1}, {1,0,1,1,1,1,1}, {1,1,1,0,0,0,0},
+        {1,1,1,1,1,1,1}, {1,1,1,1,0,1,1}
     };
     if (digit < 0 || digit > 9) digit = 0;
     seg(s[digit][0], 0.2f, 0.0f, 0.8f, 0.0f);
@@ -318,9 +293,8 @@ void drawDigit(float x, float y, int digit, float size) {
 void drawNumber(float x, float y, int value, float size) {
     if (value < 0) value = 0;
     std::string s = std::to_string(value);
-    for (size_t i = 0; i < s.size(); ++i) {
+    for (size_t i = 0; i < s.size(); ++i)
         drawDigit(x + i * size * 0.8f, y, s[i] - '0', size);
-    }
 }
 
 void drawHUD() {
@@ -334,22 +308,18 @@ void drawHUD() {
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glColor4f(0.2f, 0.9f, 0.2f, 0.9f);
     drawNumber(40, 180, (int)std::abs(speed * 10), 28);
-
     glColor4f(0.3f, 0.6f, 1.0f, 0.9f);
     drawNumber(WIDTH - 120, 180, (int)posY, 28);
-
     glColor4f(1.0f, 0.4f, 0.4f, 0.9f);
     float heading = std::fmod(yaw + 360.0f, 360.0f);
-    drawNumber(WIDTH/2 - 40, 40, (int)heading, 24);
+    drawNumber(WIDTH / 2 - 40, 40, (int)heading, 24);
 
     glDisable(GL_BLEND);
-
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -368,36 +338,34 @@ void drawMenu() {
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glColor4f(1.0f, 1.0f, 1.0f, 0.6f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH/2 - 180, HEIGHT/2 - 100);
-    glVertex2f(WIDTH/2 + 180, HEIGHT/2 - 100);
-    glVertex2f(WIDTH/2 + 180, HEIGHT/2 + 100);
-    glVertex2f(WIDTH/2 - 180, HEIGHT/2 + 100);
+    glVertex2f(WIDTH / 2 - 180, HEIGHT / 2 - 100);
+    glVertex2f(WIDTH / 2 + 180, HEIGHT / 2 - 100);
+    glVertex2f(WIDTH / 2 + 180, HEIGHT / 2 + 100);
+    glVertex2f(WIDTH / 2 - 180, HEIGHT / 2 + 100);
     glEnd();
 
     glColor4f(0.7f, 0.9f, 0.7f, 0.8f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 60);
-    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 60);
-    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 10);
-    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 10);
+    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 - 60);
+    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 - 60);
+    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 - 10);
+    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 - 10);
     glEnd();
 
     glColor4f(0.9f, 0.5f, 0.5f, 0.8f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 10);
-    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 10);
-    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 60);
-    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 60);
+    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 + 10);
+    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 + 10);
+    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 + 60);
+    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 + 60);
     glEnd();
 
     glDisable(GL_BLEND);
-
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -406,10 +374,7 @@ void drawMenu() {
 }
 
 int main(int argc, char* argv[]) {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "SDL init failed\n";
-        return 1;
-    }
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
 
     SDL_Window* window = SDL_CreateWindow("Flight Simulator",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -417,22 +382,18 @@ int main(int argc, char* argv[]) {
 
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     SDL_GL_SetSwapInterval(1);
-
     SDL_SetRelativeMouseMode(SDL_TRUE);
 
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.42f, 0.68f, 0.95f, 1.0f);
 
-    generateHeightmap();
+    loadHeightmap("heightmap.jpg");
     loadTexture("terrain.bmp", terrainTexture);
     loadTexture("sky.jpg", skyTexture);
-
-    yaw = 0.0f;
 
     bool running = true;
     SDL_Event e;
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
-
     const float MAX_SPEED = 8.0f;
     float mouseSensitivity = 0.15f;
 
@@ -461,64 +422,49 @@ int main(int argc, char* argv[]) {
         }
 
         if (showMenu && mouseClick) {
-            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
-                mouseY > HEIGHT/2 - 60 && mouseY < HEIGHT/2 - 10) {
+            if (mouseX > WIDTH / 2 - 140 && mouseX < WIDTH / 2 + 140 &&
+                mouseY > HEIGHT / 2 - 60 && mouseY < HEIGHT / 2 - 10) {
                 showMenu = false;
                 SDL_SetRelativeMouseMode(SDL_TRUE);
             }
-            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
-                mouseY > HEIGHT/2 + 10 && mouseY < HEIGHT/2 + 60) {
+            if (mouseX > WIDTH / 2 - 140 && mouseX < WIDTH / 2 + 140 &&
+                mouseY > HEIGHT / 2 + 10 && mouseY < HEIGHT / 2 + 60) {
                 running = false;
             }
         }
 
         if (!showMenu) {
             const float controlRate = 30.0f;
-
             rollRate = 0;
-            if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
+            if (keys[SDL_SCANCODE_A]) rollRate = controlRate;
             if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
-
             pitchRate = 0;
             if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.55f;
-            if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.55f;
-
+            if (keys[SDL_SCANCODE_S]) pitchRate = controlRate * 0.55f;
             yawRate = 0;
-            if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
+            if (keys[SDL_SCANCODE_Z]) yawRate = controlRate * 0.45f;
             if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-            rollRate  -= mouseXRel * mouseSensitivity * 8.0f;
+            rollRate -= mouseXRel * mouseSensitivity * 8.0f;
             pitchRate -= mouseYRel * mouseSensitivity * 5.0f;
 
-            if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
-                speed -= 0.06f;
-            }
-            if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
-                speed += 0.06f;
-            }
-
+            if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed -= 0.06f;
+            if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed += 0.06f;
             if (speed > MAX_SPEED) speed = MAX_SPEED;
             if (speed < -4.0f) speed = -4.0f;
 
             float dt = 0.016f;
-            roll  += rollRate * dt;
+            roll += rollRate * dt;
             pitch += pitchRate * dt;
-            yaw   += yawRate * dt;
-
-            float bankYaw = roll * 0.35f;
-            yaw += bankYaw * dt * 8.0f;
-
-            float bankDescent = std::abs(roll) * 0.12f;
-            pitch += bankDescent * dt * 3.0f;
-
+            yaw += yawRate * dt;
+            yaw += roll * 0.35f * dt * 8.0f;
+            pitch += std::abs(roll) * 0.12f * dt * 3.0f;
             roll *= 0.99f;
-
             if (pitch > 45) pitch = 45;
             if (pitch < -45) pitch = -45;
 
-            float radYaw   = yaw   * 3.14159265f / 180.0f;
+            float radYaw = yaw * 3.14159265f / 180.0f;
             float radPitch = pitch * 3.14159265f / 180.0f;
-
             float forwardX = std::sin(radYaw) * std::cos(radPitch);
             float forwardY = -std::sin(radPitch);
             float forwardZ = std::cos(radYaw) * std::cos(radPitch);
@@ -533,29 +479,23 @@ int main(int argc, char* argv[]) {
         }
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         float aspect = (float)WIDTH / HEIGHT;
         float fov = 48.0f * 3.14159265f / 180.0f;
         float nearP = 0.5f, farP = 7000.0f;
         float top = nearP * std::tan(fov / 2);
-        float bottom = -top;
-        float right = top * aspect;
-        float left = -right;
-        glFrustum(left, right, bottom, top, nearP, farP);
+        glFrustum(-top * aspect, top * aspect, -top, top, nearP, farP);
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-
-        glRotatef(-roll,  0, 0, 1);
+        glRotatef(-roll, 0, 0, 1);
         glRotatef(-pitch, 1, 0, 0);
-        glRotatef(-yaw,   0, 1, 0);
+        glRotatef(-yaw, 0, 1, 0);
         glTranslatef(-posX, -posY, -posZ);
 
         drawSky();
         drawTerrain();
-
         drawHUD();
         if (showMenu) drawMenu();
 
