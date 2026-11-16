@@ -36,7 +36,6 @@ void loadHeightmap(const char* filename) {
     unsigned char* data = stbi_load(filename, &w, &h, &channels, 1);
     if (!data) {
         std::cerr << "Failed to load heightmap: " << stbi_failure_reason() << std::endl;
-        // Fallback flat
         for (auto& v : heightmap) v = 10.0f;
         return;
     }
@@ -45,36 +44,33 @@ void loadHeightmap(const char* filename) {
         for (int x = 0; x < TERRAIN_SIZE; ++x) {
             float u = x / (float)(TERRAIN_SIZE - 1);
             float v = y / (float)(TERRAIN_SIZE - 1);
-            int ix = std::min(w - 1, (int)(u * w));
-            int iy = std::min(h - 1, (int)(v * h));
+            int ix = std::min(w - 1, (int)(u * (w - 1)));
+            int iy = std::min(h - 1, (int)(v * (h - 1)));
             float gray = data[iy * w + ix] / 255.0f;
             heightmap[y * TERRAIN_SIZE + x] = gray * HEIGHT_SCALE;
         }
     }
     stbi_image_free(data);
 
-    // Force seamless edges: average opposite edges
+    // Stronger seamless blending on edges
+    const int blendWidth = 4;
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
-        float top = heightmap[i];
-        float bottom = heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + i];
-        float avg = (top + bottom) * 0.5f;
-        heightmap[i] = avg;
-        heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + i] = avg;
-
-        float left = heightmap[i * TERRAIN_SIZE];
-        float right = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1)];
-        avg = (left + right) * 0.5f;
-        heightmap[i * TERRAIN_SIZE] = avg;
-        heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1)] = avg;
+        for (int b = 0; b < blendWidth; ++b) {
+            float t = b / (float)(blendWidth - 1);
+            // Top-bottom
+            float top = heightmap[b * TERRAIN_SIZE + i];
+            float bottom = heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i];
+            float avg = (top + bottom) * 0.5f;
+            heightmap[b * TERRAIN_SIZE + i] = avg;
+            heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i] = avg;
+            // Left-right
+            float left = heightmap[i * TERRAIN_SIZE + b];
+            float right = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1 - b)];
+            avg = (left + right) * 0.5f;
+            heightmap[i * TERRAIN_SIZE + b] = avg;
+            heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1 - b)] = avg;
+        }
     }
-    // Corner
-    float corner = (heightmap[0] + heightmap[TERRAIN_SIZE - 1] +
-                    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE] +
-                    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + TERRAIN_SIZE - 1]) * 0.25f;
-    heightmap[0] = corner;
-    heightmap[TERRAIN_SIZE - 1] = corner;
-    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE] = corner;
-    heightmap[(TERRAIN_SIZE - 1) * TERRAIN_SIZE + TERRAIN_SIZE - 1] = corner;
 }
 
 float getHeight(float worldX, float worldZ) {
@@ -221,22 +217,21 @@ void drawTerrain() {
             float originZ = tz * TILE_WORLD_SIZE;
 
             glBegin(GL_TRIANGLES);
-            const int step = 2;
-            for (int y = 0; y < TERRAIN_SIZE - step; y += step) {
-                for (int x = 0; x < TERRAIN_SIZE - step; x += step) {
+            for (int y = 0; y < TERRAIN_SIZE - 1; ++y) {
+                for (int x = 0; x < TERRAIN_SIZE - 1; ++x) {
                     auto emit = [&](int ix, int iy) {
                         float wx = originX + (ix / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
                         float wz = originZ + (iy / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
                         float h = getHeight(wx, wz);
-                        float tu = (wx / TILE_WORLD_SIZE);
-                        float tv = (wz / TILE_WORLD_SIZE);
+                        float tu = wx / TILE_WORLD_SIZE;
+                        float tv = wz / TILE_WORLD_SIZE;
                         glTexCoord2f(tu, tv);
                         glNormal3f(0, 1, 0);
                         glVertex3f(wx, h, wz);
                     };
 
-                    emit(x, y); emit(x, y + step); emit(x + step, y);
-                    emit(x + step, y); emit(x, y + step); emit(x + step, y + step);
+                    emit(x, y); emit(x, y + 1); emit(x + 1, y);
+                    emit(x + 1, y); emit(x, y + 1); emit(x + 1, y + 1);
                 }
             }
             glEnd();
