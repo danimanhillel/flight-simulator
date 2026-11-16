@@ -174,10 +174,10 @@ void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
-    // Extra row in the forward direction to reduce pop-in
+    // Extra row in the opposite direction (fixed)
     float radYaw = yaw * 3.14159265f / 180.0f;
-    int extraX = (int)std::round(std::sin(radYaw));
-    int extraZ = (int)std::round(std::cos(radYaw));
+    int extraX = -(int)std::round(std::sin(radYaw));
+    int extraZ = -(int)std::round(std::cos(radYaw));
 
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
@@ -194,8 +194,8 @@ void drawTerrain() {
     glDisable(GL_CULL_FACE);
     glColor3f(1.0f, 1.0f, 1.0f);
 
-    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND + extraZ; ++tz) {
-        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND + extraX; ++tx) {
+    for (int tz = centerTileZ - TILES_AROUND + extraZ; tz <= centerTileZ + TILES_AROUND; ++tz) {
+        for (int tx = centerTileX - TILES_AROUND + extraX; tx <= centerTileX + TILES_AROUND; ++tx) {
             float originX = tx * TILE_WORLD_SIZE;
             float originZ = tz * TILE_WORLD_SIZE;
 
@@ -246,6 +246,48 @@ void drawSky() {
     glEnable(GL_DEPTH_TEST);
 }
 
+// Simple 7-segment style digit drawing
+void drawDigit(float x, float y, int digit, float size) {
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    auto seg = [&](bool on, float x1, float y1, float x2, float y2) {
+        if (on) {
+            glVertex2f(x + x1 * size, y + y1 * size);
+            glVertex2f(x + x2 * size, y + y2 * size);
+        }
+    };
+    // segments: a b c d e f g
+    bool s[10][7] = {
+        {1,1,1,1,1,1,0}, // 0
+        {0,1,1,0,0,0,0}, // 1
+        {1,1,0,1,1,0,1}, // 2
+        {1,1,1,1,0,0,1}, // 3
+        {0,1,1,0,0,1,1}, // 4
+        {1,0,1,1,0,1,1}, // 5
+        {1,0,1,1,1,1,1}, // 6
+        {1,1,1,0,0,0,0}, // 7
+        {1,1,1,1,1,1,1}, // 8
+        {1,1,1,1,0,1,1}  // 9
+    };
+    if (digit < 0 || digit > 9) digit = 0;
+    seg(s[digit][0], 0.2f, 0.0f, 0.8f, 0.0f); // a
+    seg(s[digit][1], 0.8f, 0.0f, 0.8f, 0.5f); // b
+    seg(s[digit][2], 0.8f, 0.5f, 0.8f, 1.0f); // c
+    seg(s[digit][3], 0.2f, 1.0f, 0.8f, 1.0f); // d
+    seg(s[digit][4], 0.2f, 0.5f, 0.2f, 1.0f); // e
+    seg(s[digit][5], 0.2f, 0.0f, 0.2f, 0.5f); // f
+    seg(s[digit][6], 0.2f, 0.5f, 0.8f, 0.5f); // g
+    glEnd();
+}
+
+void drawNumber(float x, float y, int value, float size) {
+    if (value < 0) value = 0;
+    std::string s = std::to_string(value);
+    for (size_t i = 0; i < s.size(); ++i) {
+        drawDigit(x + i * size * 0.8f, y, s[i] - '0', size);
+    }
+}
+
 void drawHUD() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
@@ -261,44 +303,18 @@ void drawHUD() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Speed bar (left)
-    float speedNorm = std::abs(speed) / 8.0f;
-    glColor4f(0.2f, 0.8f, 0.2f, 0.7f);
-    glBegin(GL_QUADS);
-    glVertex2f(30, 200);
-    glVertex2f(60, 200);
-    glVertex2f(60, 200 + speedNorm * 300);
-    glVertex2f(30, 200 + speedNorm * 300);
-    glEnd();
+    // Speed (left)
+    glColor4f(0.2f, 0.9f, 0.2f, 0.9f);
+    drawNumber(40, 180, (int)std::abs(speed * 10), 28);
 
-    // Altitude bar (right)
-    float altNorm = std::min(1.0f, posY / MAX_HEIGHT);
-    glColor4f(0.2f, 0.4f, 0.9f, 0.7f);
-    glBegin(GL_QUADS);
-    glVertex2f(WIDTH - 60, 200);
-    glVertex2f(WIDTH - 30, 200);
-    glVertex2f(WIDTH - 30, 200 + altNorm * 300);
-    glVertex2f(WIDTH - 60, 200 + altNorm * 300);
-    glEnd();
+    // Altitude (right)
+    glColor4f(0.3f, 0.6f, 1.0f, 0.9f);
+    drawNumber(WIDTH - 120, 180, (int)posY, 28);
 
-    // Compass (top)
-    glColor4f(0.9f, 0.9f, 0.9f, 0.6f);
-    glBegin(GL_QUADS);
-    glVertex2f(WIDTH/2 - 150, 30);
-    glVertex2f(WIDTH/2 + 150, 30);
-    glVertex2f(WIDTH/2 + 150, 55);
-    glVertex2f(WIDTH/2 - 150, 55);
-    glEnd();
-
+    // Compass heading (top)
+    glColor4f(1.0f, 0.4f, 0.4f, 0.9f);
     float heading = std::fmod(yaw + 360.0f, 360.0f);
-    float markerX = WIDTH/2 - 150 + (heading / 360.0f) * 300.0f;
-    glColor4f(1.0f, 0.3f, 0.3f, 0.9f);
-    glBegin(GL_QUADS);
-    glVertex2f(markerX - 3, 25);
-    glVertex2f(markerX + 3, 25);
-    glVertex2f(markerX + 3, 60);
-    glVertex2f(markerX - 3, 60);
-    glEnd();
+    drawNumber(WIDTH/2 - 40, 40, (int)heading, 24);
 
     glDisable(GL_BLEND);
 
@@ -324,7 +340,6 @@ void drawMenu() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // White 60% transparent panel
     glColor4f(1.0f, 1.0f, 1.0f, 0.6f);
     glBegin(GL_QUADS);
     glVertex2f(WIDTH/2 - 180, HEIGHT/2 - 100);
@@ -333,7 +348,6 @@ void drawMenu() {
     glVertex2f(WIDTH/2 - 180, HEIGHT/2 + 100);
     glEnd();
 
-    // Continue button area
     glColor4f(0.7f, 0.9f, 0.7f, 0.8f);
     glBegin(GL_QUADS);
     glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 60);
@@ -342,7 +356,6 @@ void drawMenu() {
     glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 10);
     glEnd();
 
-    // Exit button area
     glColor4f(0.9f, 0.5f, 0.5f, 0.8f);
     glBegin(GL_QUADS);
     glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 10);
@@ -416,13 +429,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (showMenu && mouseClick) {
-            // Continue button
             if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
                 mouseY > HEIGHT/2 - 60 && mouseY < HEIGHT/2 - 10) {
                 showMenu = false;
                 SDL_SetRelativeMouseMode(SDL_TRUE);
             }
-            // Exit button
             if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
                 mouseY > HEIGHT/2 + 10 && mouseY < HEIGHT/2 + 60) {
                 running = false;
