@@ -8,12 +8,15 @@
 #include <vector>
 #include <cstdlib>
 #include <algorithm>
+#include <string>
+#include <sstream>
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 2;
+const float MAX_HEIGHT = 800.0f;
 
 float posX = 0.0f, posY = 100.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -22,6 +25,8 @@ float pitchRate = 0, yawRate = 0, rollRate = 0;
 
 GLuint terrainTexture = 0;
 GLuint skyTexture = 0;
+
+bool showMenu = false;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
@@ -169,6 +174,11 @@ void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
+    // Extra row in the forward direction to reduce pop-in
+    float radYaw = yaw * 3.14159265f / 180.0f;
+    int extraX = (int)std::round(std::sin(radYaw));
+    int extraZ = (int)std::round(std::cos(radYaw));
+
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
@@ -184,8 +194,8 @@ void drawTerrain() {
     glDisable(GL_CULL_FACE);
     glColor3f(1.0f, 1.0f, 1.0f);
 
-    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
-        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
+    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND + extraZ; ++tz) {
+        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND + extraX; ++tx) {
             float originX = tx * TILE_WORLD_SIZE;
             float originZ = tz * TILE_WORLD_SIZE;
 
@@ -228,12 +238,125 @@ void drawSky() {
     glRotatef(-pitch, 1, 0, 0);
     glRotatef(-yaw,   0, 1, 0);
 
-    // Rotate sphere so poles are up/down
     glRotatef(90.0f, 1, 0, 0);
     drawSphere(4000.0f, 32, 16);
 
     glPopMatrix();
     glDisable(GL_TEXTURE_2D);
+    glEnable(GL_DEPTH_TEST);
+}
+
+void drawHUD() {
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, WIDTH, HEIGHT, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Speed bar (left)
+    float speedNorm = std::abs(speed) / 8.0f;
+    glColor4f(0.2f, 0.8f, 0.2f, 0.7f);
+    glBegin(GL_QUADS);
+    glVertex2f(30, 200);
+    glVertex2f(60, 200);
+    glVertex2f(60, 200 + speedNorm * 300);
+    glVertex2f(30, 200 + speedNorm * 300);
+    glEnd();
+
+    // Altitude bar (right)
+    float altNorm = std::min(1.0f, posY / MAX_HEIGHT);
+    glColor4f(0.2f, 0.4f, 0.9f, 0.7f);
+    glBegin(GL_QUADS);
+    glVertex2f(WIDTH - 60, 200);
+    glVertex2f(WIDTH - 30, 200);
+    glVertex2f(WIDTH - 30, 200 + altNorm * 300);
+    glVertex2f(WIDTH - 60, 200 + altNorm * 300);
+    glEnd();
+
+    // Compass (top)
+    glColor4f(0.9f, 0.9f, 0.9f, 0.6f);
+    glBegin(GL_QUADS);
+    glVertex2f(WIDTH/2 - 150, 30);
+    glVertex2f(WIDTH/2 + 150, 30);
+    glVertex2f(WIDTH/2 + 150, 55);
+    glVertex2f(WIDTH/2 - 150, 55);
+    glEnd();
+
+    float heading = std::fmod(yaw + 360.0f, 360.0f);
+    float markerX = WIDTH/2 - 150 + (heading / 360.0f) * 300.0f;
+    glColor4f(1.0f, 0.3f, 0.3f, 0.9f);
+    glBegin(GL_QUADS);
+    glVertex2f(markerX - 3, 25);
+    glVertex2f(markerX + 3, 25);
+    glVertex2f(markerX + 3, 60);
+    glVertex2f(markerX - 3, 60);
+    glEnd();
+
+    glDisable(GL_BLEND);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glEnable(GL_DEPTH_TEST);
+}
+
+void drawMenu() {
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, WIDTH, HEIGHT, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // White 60% transparent panel
+    glColor4f(1.0f, 1.0f, 1.0f, 0.6f);
+    glBegin(GL_QUADS);
+    glVertex2f(WIDTH/2 - 180, HEIGHT/2 - 100);
+    glVertex2f(WIDTH/2 + 180, HEIGHT/2 - 100);
+    glVertex2f(WIDTH/2 + 180, HEIGHT/2 + 100);
+    glVertex2f(WIDTH/2 - 180, HEIGHT/2 + 100);
+    glEnd();
+
+    // Continue button area
+    glColor4f(0.7f, 0.9f, 0.7f, 0.8f);
+    glBegin(GL_QUADS);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 60);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 60);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 10);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 10);
+    glEnd();
+
+    // Exit button area
+    glColor4f(0.9f, 0.5f, 0.5f, 0.8f);
+    glBegin(GL_QUADS);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 10);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 10);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 60);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 60);
+    glEnd();
+
+    glDisable(GL_BLEND);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -270,70 +393,101 @@ int main(int argc, char* argv[]) {
 
     while (running) {
         int mouseXRel = 0, mouseYRel = 0;
+        int mouseX = 0, mouseY = 0;
+        bool mouseClick = false;
+
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+                showMenu = !showMenu;
+                SDL_SetRelativeMouseMode(showMenu ? SDL_FALSE : SDL_TRUE);
+            }
             if (e.type == SDL_MOUSEMOTION) {
                 mouseXRel += e.motion.xrel;
                 mouseYRel += e.motion.yrel;
+                mouseX = e.motion.x;
+                mouseY = e.motion.y;
+            }
+            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+                mouseClick = true;
+                mouseX = e.button.x;
+                mouseY = e.button.y;
             }
         }
 
-        const float controlRate = 30.0f;
-
-        rollRate = 0;
-        if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
-        if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
-
-        pitchRate = 0;
-        if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.55f;
-        if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.55f;
-
-        yawRate = 0;
-        if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
-        if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
-
-        rollRate  -= mouseXRel * mouseSensitivity * 8.0f;
-        pitchRate -= mouseYRel * mouseSensitivity * 5.0f;
-
-        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
-            speed -= 0.06f;
-        }
-        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
-            speed += 0.06f;
+        if (showMenu && mouseClick) {
+            // Continue button
+            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
+                mouseY > HEIGHT/2 - 60 && mouseY < HEIGHT/2 - 10) {
+                showMenu = false;
+                SDL_SetRelativeMouseMode(SDL_TRUE);
+            }
+            // Exit button
+            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
+                mouseY > HEIGHT/2 + 10 && mouseY < HEIGHT/2 + 60) {
+                running = false;
+            }
         }
 
-        if (speed > MAX_SPEED) speed = MAX_SPEED;
-        if (speed < -4.0f) speed = -4.0f;
+        if (!showMenu) {
+            const float controlRate = 30.0f;
 
-        float dt = 0.016f;
-        roll  += rollRate * dt;
-        pitch += pitchRate * dt;
-        yaw   += yawRate * dt;
+            rollRate = 0;
+            if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
+            if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
 
-        float bankYaw = roll * 0.35f;
-        yaw += bankYaw * dt * 8.0f;
+            pitchRate = 0;
+            if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.55f;
+            if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.55f;
 
-        float bankDescent = std::abs(roll) * 0.12f;
-        pitch += bankDescent * dt * 3.0f;
+            yawRate = 0;
+            if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
+            if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        roll *= 0.99f;
+            rollRate  -= mouseXRel * mouseSensitivity * 8.0f;
+            pitchRate -= mouseYRel * mouseSensitivity * 5.0f;
 
-        if (pitch > 45) pitch = 45;
-        if (pitch < -45) pitch = -45;
+            if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
+                speed -= 0.06f;
+            }
+            if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
+                speed += 0.06f;
+            }
 
-        float radYaw   = yaw   * 3.14159265f / 180.0f;
-        float radPitch = pitch * 3.14159265f / 180.0f;
+            if (speed > MAX_SPEED) speed = MAX_SPEED;
+            if (speed < -4.0f) speed = -4.0f;
 
-        float forwardX = std::sin(radYaw) * std::cos(radPitch);
-        float forwardY = -std::sin(radPitch);
-        float forwardZ = std::cos(radYaw) * std::cos(radPitch);
+            float dt = 0.016f;
+            roll  += rollRate * dt;
+            pitch += pitchRate * dt;
+            yaw   += yawRate * dt;
 
-        posX += forwardX * speed;
-        posY += forwardY * speed;
-        posZ += forwardZ * speed;
+            float bankYaw = roll * 0.35f;
+            yaw += bankYaw * dt * 8.0f;
 
-        float groundH = getHeight(posX, posZ);
-        if (posY < groundH + 12.0f) posY = groundH + 12.0f;
+            float bankDescent = std::abs(roll) * 0.12f;
+            pitch += bankDescent * dt * 3.0f;
+
+            roll *= 0.99f;
+
+            if (pitch > 45) pitch = 45;
+            if (pitch < -45) pitch = -45;
+
+            float radYaw   = yaw   * 3.14159265f / 180.0f;
+            float radPitch = pitch * 3.14159265f / 180.0f;
+
+            float forwardX = std::sin(radYaw) * std::cos(radPitch);
+            float forwardY = -std::sin(radPitch);
+            float forwardZ = std::cos(radYaw) * std::cos(radPitch);
+
+            posX += forwardX * speed;
+            posY += forwardY * speed;
+            posZ += forwardZ * speed;
+
+            float groundH = getHeight(posX, posZ);
+            if (posY < groundH + 12.0f) posY = groundH + 12.0f;
+            if (posY > MAX_HEIGHT) posY = MAX_HEIGHT;
+        }
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -358,6 +512,9 @@ int main(int argc, char* argv[]) {
 
         drawSky();
         drawTerrain();
+
+        drawHUD();
+        if (showMenu) drawMenu();
 
         SDL_GL_SwapWindow(window);
         SDL_Delay(16);
