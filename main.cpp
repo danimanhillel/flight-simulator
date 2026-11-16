@@ -15,10 +15,10 @@ const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
-const int TILES_AROUND = 2;
-const float MAX_HEIGHT = 800.0f;
+const int TILES_AROUND = 3;          // one extra in every direction
+const float MAX_HEIGHT = 100.0f;
 
-float posX = 0.0f, posY = 100.0f, posZ = 0.0f;
+float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
 float speed = 0.0f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
@@ -174,11 +174,6 @@ void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
-    // Extra row in the opposite direction (fixed)
-    float radYaw = yaw * 3.14159265f / 180.0f;
-    int extraX = -(int)std::round(std::sin(radYaw));
-    int extraZ = -(int)std::round(std::cos(radYaw));
-
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
@@ -194,8 +189,8 @@ void drawTerrain() {
     glDisable(GL_CULL_FACE);
     glColor3f(1.0f, 1.0f, 1.0f);
 
-    for (int tz = centerTileZ - TILES_AROUND + extraZ; tz <= centerTileZ + TILES_AROUND; ++tz) {
-        for (int tx = centerTileX - TILES_AROUND + extraX; tx <= centerTileX + TILES_AROUND; ++tx) {
+    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
+        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
             float originX = tx * TILE_WORLD_SIZE;
             float originZ = tz * TILE_WORLD_SIZE;
 
@@ -246,7 +241,6 @@ void drawSky() {
     glEnable(GL_DEPTH_TEST);
 }
 
-// Simple 7-segment style digit drawing
 void drawDigit(float x, float y, int digit, float size) {
     glLineWidth(2.0f);
     glBegin(GL_LINES);
@@ -256,27 +250,26 @@ void drawDigit(float x, float y, int digit, float size) {
             glVertex2f(x + x2 * size, y + y2 * size);
         }
     };
-    // segments: a b c d e f g
     bool s[10][7] = {
-        {1,1,1,1,1,1,0}, // 0
-        {0,1,1,0,0,0,0}, // 1
-        {1,1,0,1,1,0,1}, // 2
-        {1,1,1,1,0,0,1}, // 3
-        {0,1,1,0,0,1,1}, // 4
-        {1,0,1,1,0,1,1}, // 5
-        {1,0,1,1,1,1,1}, // 6
-        {1,1,1,0,0,0,0}, // 7
-        {1,1,1,1,1,1,1}, // 8
-        {1,1,1,1,0,1,1}  // 9
+        {1,1,1,1,1,1,0},
+        {0,1,1,0,0,0,0},
+        {1,1,0,1,1,0,1},
+        {1,1,1,1,0,0,1},
+        {0,1,1,0,0,1,1},
+        {1,0,1,1,0,1,1},
+        {1,0,1,1,1,1,1},
+        {1,1,1,0,0,0,0},
+        {1,1,1,1,1,1,1},
+        {1,1,1,1,0,1,1}
     };
     if (digit < 0 || digit > 9) digit = 0;
-    seg(s[digit][0], 0.2f, 0.0f, 0.8f, 0.0f); // a
-    seg(s[digit][1], 0.8f, 0.0f, 0.8f, 0.5f); // b
-    seg(s[digit][2], 0.8f, 0.5f, 0.8f, 1.0f); // c
-    seg(s[digit][3], 0.2f, 1.0f, 0.8f, 1.0f); // d
-    seg(s[digit][4], 0.2f, 0.5f, 0.2f, 1.0f); // e
-    seg(s[digit][5], 0.2f, 0.0f, 0.2f, 0.5f); // f
-    seg(s[digit][6], 0.2f, 0.5f, 0.8f, 0.5f); // g
+    seg(s[digit][0], 0.2f, 0.0f, 0.8f, 0.0f);
+    seg(s[digit][1], 0.8f, 0.0f, 0.8f, 0.5f);
+    seg(s[digit][2], 0.8f, 0.5f, 0.8f, 1.0f);
+    seg(s[digit][3], 0.2f, 1.0f, 0.8f, 1.0f);
+    seg(s[digit][4], 0.2f, 0.5f, 0.2f, 1.0f);
+    seg(s[digit][5], 0.2f, 0.0f, 0.2f, 0.5f);
+    seg(s[digit][6], 0.2f, 0.5f, 0.8f, 0.5f);
     glEnd();
 }
 
@@ -303,15 +296,12 @@ void drawHUD() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Speed (left)
     glColor4f(0.2f, 0.9f, 0.2f, 0.9f);
     drawNumber(40, 180, (int)std::abs(speed * 10), 28);
 
-    // Altitude (right)
     glColor4f(0.3f, 0.6f, 1.0f, 0.9f);
     drawNumber(WIDTH - 120, 180, (int)posY, 28);
 
-    // Compass heading (top)
     glColor4f(1.0f, 0.4f, 0.4f, 0.9f);
     float heading = std::fmod(yaw + 360.0f, 360.0f);
     drawNumber(WIDTH/2 - 40, 40, (int)heading, 24);
