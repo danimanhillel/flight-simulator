@@ -13,7 +13,7 @@ const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 2;
 
-float posX = 0.0f, posY = 90.0f, posZ = 0.0f;
+float posX = 0.0f, posY = 100.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
 float speed = 0.0f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
@@ -66,12 +66,11 @@ float fractalNoise(float x, float y, int octaves) {
 void generateHeightmap() {
     for (int y = 0; y < TERRAIN_SIZE; ++y) {
         for (int x = 0; x < TERRAIN_SIZE; ++x) {
-            float nx = x / (float)TERRAIN_SIZE * 4.0f;
-            float ny = y / (float)TERRAIN_SIZE * 4.0f;
-            float h = fractalNoise(nx, ny, 6);
-            h = std::pow(std::abs(h), 1.1f) * (h > 0 ? 1.0f : -1.0f);
-            // Much stronger height variation
-            heightmap[y * TERRAIN_SIZE + x] = h * 180.0f + 5.0f;
+            float nx = x / (float)TERRAIN_SIZE * 5.0f;
+            float ny = y / (float)TERRAIN_SIZE * 5.0f;
+            float h = fractalNoise(nx, ny, 7);
+            h = std::pow(std::abs(h), 1.15f) * (h > 0 ? 1.0f : -1.0f);
+            heightmap[y * TERRAIN_SIZE + x] = h * 160.0f + 8.0f;
         }
     }
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
@@ -112,29 +111,44 @@ float getHeight(float worldX, float worldZ) {
 }
 
 void colorFromHeight(float h, float& r, float& g, float& b) {
-    // Lower thresholds so colors actually appear with the new height range
-    if (h < 35.0f) {
-        r = 0.22f; g = 0.55f; b = 0.20f;          // green
-    } else if (h < 70.0f) {
-        float t = (h - 35.0f) / 35.0f;
-        r = 0.22f + t * 0.35f;
-        g = 0.55f - t * 0.18f;
-        b = 0.20f - t * 0.05f;                    // green -> brown
+    // Multi-layer coloring closer to the aerial reference
+    if (h < 25.0f) {
+        // Deep green valleys
+        r = 0.18f; g = 0.48f; b = 0.16f;
+    } else if (h < 50.0f) {
+        float t = (h - 25.0f) / 25.0f;
+        r = 0.18f + t * 0.25f;
+        g = 0.48f + t * 0.05f;
+        b = 0.16f + t * 0.08f;
+    } else if (h < 80.0f) {
+        // Forest / mid green-brown
+        float t = (h - 50.0f) / 30.0f;
+        r = 0.43f + t * 0.15f;
+        g = 0.53f - t * 0.12f;
+        b = 0.24f - t * 0.04f;
     } else if (h < 110.0f) {
-        float t = (h - 70.0f) / 40.0f;
-        r = 0.57f + t * 0.15f;
-        g = 0.37f + t * 0.12f;
-        b = 0.28f + t * 0.12f;                    // rock gray
+        // Rocky slopes
+        float t = (h - 80.0f) / 30.0f;
+        r = 0.58f + t * 0.12f;
+        g = 0.41f + t * 0.08f;
+        b = 0.32f + t * 0.08f;
     } else {
-        float t = std::min(1.0f, (h - 110.0f) / 50.0f);
-        r = 0.72f + t * 0.22f;
-        g = 0.65f + t * 0.25f;
-        b = 0.55f + t * 0.3f;                     // light peaks
+        // High peaks lighter
+        float t = std::min(1.0f, (h - 110.0f) / 40.0f);
+        r = 0.70f + t * 0.22f;
+        g = 0.62f + t * 0.22f;
+        b = 0.52f + t * 0.28f;
     }
 
-    // Small procedural variation so it doesn't look flat
-    float n = std::sin(h * 0.15f) * 0.04f;
-    r += n; g += n * 0.5f; b += n * 0.3f;
+    // Extra variation (forests / rock patches)
+    float n1 = std::sin(h * 0.25f + 1.3f) * 0.06f;
+    float n2 = std::cos(h * 0.18f) * 0.04f;
+    r += n1; g += n2; b += n1 * 0.4f;
+
+    // Clamp
+    r = std::max(0.0f, std::min(1.0f, r));
+    g = std::max(0.0f, std::min(1.0f, g));
+    b = std::max(0.0f, std::min(1.0f, b));
 }
 
 void drawTerrain() {
@@ -144,11 +158,11 @@ void drawTerrain() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
-    GLfloat lightPos[] = {0.4f, 1.0f, 0.3f, 0.0f};
+    GLfloat lightPos[] = {0.35f, 1.0f, 0.25f, 0.0f};
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
-    GLfloat diffuse[] = {1.0f, 1.0f, 0.9f, 1.0f};
+    GLfloat diffuse[] = {1.0f, 0.98f, 0.9f, 1.0f};
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-    GLfloat ambient[] = {0.35f, 0.35f, 0.35f, 1.0f};
+    GLfloat ambient[] = {0.4f, 0.4f, 0.42f, 1.0f};
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
 
     glDisable(GL_CULL_FACE);
@@ -187,11 +201,11 @@ void drawSky() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
     glBegin(GL_QUADS);
-    glColor3f(0.45f, 0.7f, 0.95f);
-    glVertex3f(-5000, 600, -5000);
-    glVertex3f( 5000, 600, -5000);
-    glVertex3f( 5000, 600,  5000);
-    glVertex3f(-5000, 600,  5000);
+    glColor3f(0.42f, 0.68f, 0.95f);
+    glVertex3f(-5000, 700, -5000);
+    glVertex3f( 5000, 700, -5000);
+    glVertex3f( 5000, 700,  5000);
+    glVertex3f(-5000, 700,  5000);
     glEnd();
     glEnable(GL_DEPTH_TEST);
 }
@@ -210,7 +224,7 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetSwapInterval(1);
 
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.45f, 0.7f, 0.95f, 1.0f);
+    glClearColor(0.42f, 0.68f, 0.95f, 1.0f);
 
     generateHeightmap();
 
@@ -225,32 +239,28 @@ int main(int argc, char* argv[]) {
             if (e.type == SDL_QUIT) running = false;
         }
 
-        const float controlRate = 32.0f;
+        const float controlRate = 30.0f;
 
         rollRate = 0;
         if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
         if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
 
         pitchRate = 0;
-        if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.6f;
-        if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.6f;
+        if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.55f;
+        if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.55f;
 
         yawRate = 0;
-        if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.5f;
-        if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.5f;
+        if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
+        if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
-            speed -= 0.07f;
-        }
-        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
-            speed += 0.07f;
-        }
-        if (speed > 10.0f) speed = 10.0f;
-        if (speed < -5.0f) speed = -5.0f;
+        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed -= 0.06f;
+        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed += 0.06f;
+        if (speed > 9.0f) speed = 9.0f;
+        if (speed < -4.0f) speed = -4.0f;
 
         if (!keys[SDL_SCANCODE_EQUALS] && !keys[SDL_SCANCODE_KP_PLUS] &&
             !keys[SDL_SCANCODE_MINUS] && !keys[SDL_SCANCODE_KP_MINUS]) {
-            speed *= 0.985f;
+            speed *= 0.988f;
         }
 
         float dt = 0.016f;
@@ -258,10 +268,17 @@ int main(int argc, char* argv[]) {
         pitch += pitchRate * dt;
         yaw   += yawRate * dt;
 
-        roll *= 0.987f;
+        // Banked turn: when rolled, automatically yaw and slightly descend
+        float bankYaw = roll * 0.35f;          // turn rate proportional to bank
+        yaw += bankYaw * dt * 8.0f;
 
-        if (pitch > 50) pitch = 50;
-        if (pitch < -50) pitch = -50;
+        float bankDescent = std::abs(roll) * 0.12f;  // slight downward component when banked
+        pitch += bankDescent * dt * 3.0f;
+
+        roll *= 0.99f;
+
+        if (pitch > 45) pitch = 45;
+        if (pitch < -45) pitch = -45;
 
         float radYaw   = yaw   * 3.14159265f / 180.0f;
         float radPitch = pitch * 3.14159265f / 180.0f;
@@ -275,14 +292,14 @@ int main(int argc, char* argv[]) {
         posZ += forwardZ * speed;
 
         float groundH = getHeight(posX, posZ);
-        if (posY < groundH + 10.0f) posY = groundH + 10.0f;
+        if (posY < groundH + 12.0f) posY = groundH + 12.0f;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         float aspect = (float)WIDTH / HEIGHT;
-        float fov = 50.0f * 3.14159265f / 180.0f;
+        float fov = 48.0f * 3.14159265f / 180.0f;
         float nearP = 0.5f, farP = 7000.0f;
         float top = nearP * std::tan(fov / 2);
         float bottom = -top;
