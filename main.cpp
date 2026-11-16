@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 #include <cstdlib>
+#include <algorithm>
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
@@ -92,8 +93,10 @@ float getHeight(float worldX, float worldZ) {
     float fy = v - y0;
 
     auto sample = [&](int x, int y) {
-        x = std::clamp(x, 0, TERRAIN_SIZE-1);
-        y = std::clamp(y, 0, TERRAIN_SIZE-1);
+        if (x < 0) x = 0;
+        if (x >= TERRAIN_SIZE) x = TERRAIN_SIZE - 1;
+        if (y < 0) y = 0;
+        if (y >= TERRAIN_SIZE) y = TERRAIN_SIZE - 1;
         return heightmap[y * TERRAIN_SIZE + x];
     };
 
