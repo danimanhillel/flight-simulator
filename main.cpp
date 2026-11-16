@@ -205,9 +205,9 @@ void drawTerrain() {
             toTileX /= len;
             toTileZ /= len;
 
-            // Only draw tiles roughly in front of the camera
+            // Keep tiles in front (inverted condition)
             float dot = toTileX * forwardX + toTileZ * forwardZ;
-            if (dot < -0.2f) continue;
+            if (dot > 0.2f) continue;
 
             float originX = tx * TILE_WORLD_SIZE;
             float originZ = tz * TILE_WORLD_SIZE;
