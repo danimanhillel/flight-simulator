@@ -18,6 +18,7 @@ const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 3;
 const float MAX_HEIGHT = 100.0f;
 const float HEIGHT_SCALE = 80.0f;
+const float TILE_OVERLAP = 2.0f; // slight overlap to hide gaps
 
 float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -52,18 +53,15 @@ void loadHeightmap(const char* filename) {
     }
     stbi_image_free(data);
 
-    // Stronger seamless blending on edges
-    const int blendWidth = 4;
+    const int blendWidth = 6;
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
         for (int b = 0; b < blendWidth; ++b) {
-            float t = b / (float)(blendWidth - 1);
-            // Top-bottom
             float top = heightmap[b * TERRAIN_SIZE + i];
             float bottom = heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i];
             float avg = (top + bottom) * 0.5f;
             heightmap[b * TERRAIN_SIZE + i] = avg;
             heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i] = avg;
-            // Left-right
+
             float left = heightmap[i * TERRAIN_SIZE + b];
             float right = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1 - b)];
             avg = (left + right) * 0.5f;
@@ -213,15 +211,16 @@ void drawTerrain() {
             bool keep = (dot <= 0.2f) || (tx == rearTX && tz == rearTZ);
             if (!keep) continue;
 
-            float originX = tx * TILE_WORLD_SIZE;
-            float originZ = tz * TILE_WORLD_SIZE;
+            float originX = tx * TILE_WORLD_SIZE - TILE_OVERLAP;
+            float originZ = tz * TILE_WORLD_SIZE - TILE_OVERLAP;
+            float tileSize = TILE_WORLD_SIZE + 2.0f * TILE_OVERLAP;
 
             glBegin(GL_TRIANGLES);
             for (int y = 0; y < TERRAIN_SIZE - 1; ++y) {
                 for (int x = 0; x < TERRAIN_SIZE - 1; ++x) {
                     auto emit = [&](int ix, int iy) {
-                        float wx = originX + (ix / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
-                        float wz = originZ + (iy / (float)(TERRAIN_SIZE - 1)) * TILE_WORLD_SIZE;
+                        float wx = originX + (ix / (float)(TERRAIN_SIZE - 1)) * tileSize;
+                        float wz = originZ + (iy / (float)(TERRAIN_SIZE - 1)) * tileSize;
                         float h = getHeight(wx, wz);
                         float tu = wx / TILE_WORLD_SIZE;
                         float tv = wz / TILE_WORLD_SIZE;
