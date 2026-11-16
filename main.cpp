@@ -11,7 +11,7 @@ const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 128;
 const float TILE_WORLD_SIZE = 400.0f;
-const int TILES_AROUND = 2;       // 5x5
+const int TILES_AROUND = 2;
 
 float posX = 0.0f, posY = 80.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -20,7 +20,6 @@ float pitchRate = 0, yawRate = 0, rollRate = 0;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
-// Seamless noise helpers (periodic)
 float noise(int x, int y) {
     x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
     y = (y % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
@@ -71,14 +70,12 @@ void generateHeightmap() {
             float ny = y / (float)TERRAIN_SIZE * 4.0f;
             float h = fractalNoise(nx, ny, 5);
             h = std::pow(std::abs(h), 1.3f) * (h > 0 ? 1.0f : -1.0f);
-            // Height influence doubled (was 50, now 100)
             heightmap[y * TERRAIN_SIZE + x] = h * 100.0f + 10.0f;
         }
     }
-    // Force exact seamless edges
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
-        heightmap[i] = heightmap[i + (TERRAIN_SIZE-1)*TERRAIN_SIZE]; // top = bottom
-        heightmap[i * TERRAIN_SIZE] = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE-1)]; // left = right
+        heightmap[i] = heightmap[i + (TERRAIN_SIZE-1)*TERRAIN_SIZE];
+        heightmap[i * TERRAIN_SIZE] = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE-1)];
     }
     heightmap[0] = heightmap[(TERRAIN_SIZE-1)*TERRAIN_SIZE + (TERRAIN_SIZE-1)];
 }
@@ -146,6 +143,9 @@ void drawTerrain() {
     GLfloat diffuse[] = {1.0f, 1.0f, 0.95f, 1.0f};
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
 
+    // Disable culling so both sides are visible while we fix winding
+    glDisable(GL_CULL_FACE);
+
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
         for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
             float originX = tx * TILE_WORLD_SIZE;
@@ -166,8 +166,9 @@ void drawTerrain() {
                         glVertex3f(wx, h, wz);
                     };
 
-                    emit(x, y); emit(x+step, y); emit(x, y+step);
-                    emit(x+step, y); emit(x+step, y+step); emit(x, y+step);
+                    // Reversed winding so the top face points upward toward the camera
+                    emit(x, y); emit(x, y+step); emit(x+step, y);
+                    emit(x+step, y); emit(x, y+step); emit(x+step, y+step);
                 }
             }
             glEnd();
@@ -204,7 +205,7 @@ int main(int argc, char* argv[]) {
 
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.5f, 0.75f, 0.95f, 1.0f);
-    glEnable(GL_CULL_FACE);
+    // Culling disabled in drawTerrain for safety
 
     generateHeightmap();
 
@@ -221,9 +222,10 @@ int main(int argc, char* argv[]) {
 
         const float controlRate = 35.0f;
 
+        // Swapped A and D
         rollRate = 0;
-        if (keys[SDL_SCANCODE_A]) rollRate = -controlRate;
-        if (keys[SDL_SCANCODE_D]) rollRate =  controlRate;
+        if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;  // now right
+        if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;  // now left
 
         pitchRate = 0;
         if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.65f;
