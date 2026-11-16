@@ -13,12 +13,10 @@
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
-const int TERRAIN_SIZE = 128;
+const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 3;
 const float MAX_HEIGHT = 100.0f;
-const float HEIGHT_SCALE = 80.0f;
-const float TILE_OVERLAP = 2.0f; // slight overlap to hide gaps
 
 float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -32,43 +30,64 @@ bool showMenu = false;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
-void loadHeightmap(const char* filename) {
-    int w, h, channels;
-    unsigned char* data = stbi_load(filename, &w, &h, &channels, 1);
-    if (!data) {
-        std::cerr << "Failed to load heightmap: " << stbi_failure_reason() << std::endl;
-        for (auto& v : heightmap) v = 10.0f;
-        return;
-    }
+float noise(int x, int y) {
+    x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
+    y = (y % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
+    int n = x + y * 57;
+    n = (n << 13) ^ n;
+    return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
+}
 
+float smoothNoise(int x, int y) {
+    float corners = (noise(x-1, y-1) + noise(x+1, y-1) + noise(x-1, y+1) + noise(x+1, y+1)) / 16.0f;
+    float sides   = (noise(x-1, y) + noise(x+1, y) + noise(x, y-1) + noise(x, y+1)) / 8.0f;
+    float center  = noise(x, y) / 4.0f;
+    return corners + sides + center;
+}
+
+float interpolatedNoise(float x, float y) {
+    int ix = (int)std::floor(x);
+    int iy = (int)std::floor(y);
+    float fx = x - ix;
+    float fy = y - iy;
+    float v1 = smoothNoise(ix, iy);
+    float v2 = smoothNoise(ix+1, iy);
+    float v3 = smoothNoise(ix, iy+1);
+    float v4 = smoothNoise(ix+1, iy+1);
+    float i1 = v1 * (1-fx) + v2 * fx;
+    float i2 = v3 * (1-fx) + v4 * fx;
+    return i1 * (1-fy) + i2 * fy;
+}
+
+float fractalNoise(float x, float y, int octaves) {
+    float total = 0.0f;
+    float frequency = 1.0f;
+    float amplitude = 1.0f;
+    float maxValue = 0.0f;
+    for (int i = 0; i < octaves; ++i) {
+        total += interpolatedNoise(x * frequency, y * frequency) * amplitude;
+        maxValue += amplitude;
+        amplitude *= 0.5f;
+        frequency *= 2.0f;
+    }
+    return total / maxValue;
+}
+
+void generateHeightmap() {
     for (int y = 0; y < TERRAIN_SIZE; ++y) {
         for (int x = 0; x < TERRAIN_SIZE; ++x) {
-            float u = x / (float)(TERRAIN_SIZE - 1);
-            float v = y / (float)(TERRAIN_SIZE - 1);
-            int ix = std::min(w - 1, (int)(u * (w - 1)));
-            int iy = std::min(h - 1, (int)(v * (h - 1)));
-            float gray = data[iy * w + ix] / 255.0f;
-            heightmap[y * TERRAIN_SIZE + x] = gray * HEIGHT_SCALE;
+            float nx = x / (float)TERRAIN_SIZE * 5.0f;
+            float ny = y / (float)TERRAIN_SIZE * 5.0f;
+            float h = fractalNoise(nx, ny, 7);
+            h = std::pow(std::abs(h), 1.15f) * (h > 0 ? 1.0f : -1.0f);
+            heightmap[y * TERRAIN_SIZE + x] = h * 40.0f + 8.0f;
         }
     }
-    stbi_image_free(data);
-
-    const int blendWidth = 6;
     for (int i = 0; i < TERRAIN_SIZE; ++i) {
-        for (int b = 0; b < blendWidth; ++b) {
-            float top = heightmap[b * TERRAIN_SIZE + i];
-            float bottom = heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i];
-            float avg = (top + bottom) * 0.5f;
-            heightmap[b * TERRAIN_SIZE + i] = avg;
-            heightmap[(TERRAIN_SIZE - 1 - b) * TERRAIN_SIZE + i] = avg;
-
-            float left = heightmap[i * TERRAIN_SIZE + b];
-            float right = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1 - b)];
-            avg = (left + right) * 0.5f;
-            heightmap[i * TERRAIN_SIZE + b] = avg;
-            heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE - 1 - b)] = avg;
-        }
+        heightmap[i] = heightmap[i + (TERRAIN_SIZE-1)*TERRAIN_SIZE];
+        heightmap[i * TERRAIN_SIZE] = heightmap[i * TERRAIN_SIZE + (TERRAIN_SIZE-1)];
     }
+    heightmap[0] = heightmap[(TERRAIN_SIZE-1)*TERRAIN_SIZE + (TERRAIN_SIZE-1)];
 }
 
 float getHeight(float worldX, float worldZ) {
@@ -80,10 +99,10 @@ float getHeight(float worldX, float worldZ) {
     float u = tileX / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
     float v = tileZ / TILE_WORLD_SIZE * (TERRAIN_SIZE - 1);
 
-    int x0 = (int)std::floor(u);
-    int y0 = (int)std::floor(v);
-    float fx = u - x0;
-    float fy = v - y0;
+    int x0 = (int)std::floor(u) % TERRAIN_SIZE;
+    int y0 = (int)std::floor(v) % TERRAIN_SIZE;
+    float fx = u - std::floor(u);
+    float fy = v - std::floor(v);
 
     auto sample = [&](int x, int y) {
         x = (x % TERRAIN_SIZE + TERRAIN_SIZE) % TERRAIN_SIZE;
@@ -92,13 +111,13 @@ float getHeight(float worldX, float worldZ) {
     };
 
     float h00 = sample(x0, y0);
-    float h10 = sample(x0 + 1, y0);
-    float h01 = sample(x0, y0 + 1);
-    float h11 = sample(x0 + 1, y0 + 1);
+    float h10 = sample(x0+1, y0);
+    float h01 = sample(x0, y0+1);
+    float h11 = sample(x0+1, y0+1);
 
-    float h0 = h00 * (1 - fx) + h10 * fx;
-    float h1 = h01 * (1 - fx) + h11 * fx;
-    return h0 * (1 - fy) + h1 * fy;
+    float h0 = h00 * (1-fx) + h10 * fx;
+    float h1 = h01 * (1-fx) + h11 * fx;
+    return h0 * (1-fy) + h1 * fy;
 }
 
 void loadTexture(const char* filename, GLuint& textureID) {
@@ -167,7 +186,7 @@ void drawTerrain() {
             float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
             float toTileX = tileCenterX - posX;
             float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX * toTileX + toTileZ * toTileZ);
+            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
             if (len < 1.0f) len = 1.0f;
             float nX = toTileX / len;
             float nZ = toTileZ / len;
@@ -202,7 +221,7 @@ void drawTerrain() {
 
             float toTileX = tileCenterX - posX;
             float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX * toTileX + toTileZ * toTileZ);
+            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
             if (len < 1.0f) len = 1.0f;
             toTileX /= len;
             toTileZ /= len;
@@ -211,26 +230,25 @@ void drawTerrain() {
             bool keep = (dot <= 0.2f) || (tx == rearTX && tz == rearTZ);
             if (!keep) continue;
 
-            float originX = tx * TILE_WORLD_SIZE - TILE_OVERLAP;
-            float originZ = tz * TILE_WORLD_SIZE - TILE_OVERLAP;
-            float tileSize = TILE_WORLD_SIZE + 2.0f * TILE_OVERLAP;
+            float originX = tx * TILE_WORLD_SIZE;
+            float originZ = tz * TILE_WORLD_SIZE;
 
             glBegin(GL_TRIANGLES);
             for (int y = 0; y < TERRAIN_SIZE - 1; ++y) {
                 for (int x = 0; x < TERRAIN_SIZE - 1; ++x) {
                     auto emit = [&](int ix, int iy) {
-                        float wx = originX + (ix / (float)(TERRAIN_SIZE - 1)) * tileSize;
-                        float wz = originZ + (iy / (float)(TERRAIN_SIZE - 1)) * tileSize;
+                        float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
+                        float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
                         float h = getHeight(wx, wz);
-                        float tu = wx / TILE_WORLD_SIZE;
-                        float tv = wz / TILE_WORLD_SIZE;
+                        float tu = (wx / TILE_WORLD_SIZE);
+                        float tv = (wz / TILE_WORLD_SIZE);
                         glTexCoord2f(tu, tv);
                         glNormal3f(0, 1, 0);
                         glVertex3f(wx, h, wz);
                     };
 
-                    emit(x, y); emit(x, y + 1); emit(x + 1, y);
-                    emit(x + 1, y); emit(x, y + 1); emit(x + 1, y + 1);
+                    emit(x, y); emit(x, y+1); emit(x+1, y);
+                    emit(x+1, y); emit(x, y+1); emit(x+1, y+1);
                 }
             }
             glEnd();
@@ -311,7 +329,7 @@ void drawHUD() {
     drawNumber(WIDTH - 120, 180, (int)posY, 28);
     glColor4f(1.0f, 0.4f, 0.4f, 0.9f);
     float heading = std::fmod(yaw + 360.0f, 360.0f);
-    drawNumber(WIDTH / 2 - 40, 40, (int)heading, 24);
+    drawNumber(WIDTH/2 - 40, 40, (int)heading, 24);
 
     glDisable(GL_BLEND);
     glPopMatrix();
@@ -337,26 +355,26 @@ void drawMenu() {
 
     glColor4f(1.0f, 1.0f, 1.0f, 0.6f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH / 2 - 180, HEIGHT / 2 - 100);
-    glVertex2f(WIDTH / 2 + 180, HEIGHT / 2 - 100);
-    glVertex2f(WIDTH / 2 + 180, HEIGHT / 2 + 100);
-    glVertex2f(WIDTH / 2 - 180, HEIGHT / 2 + 100);
+    glVertex2f(WIDTH/2 - 180, HEIGHT/2 - 100);
+    glVertex2f(WIDTH/2 + 180, HEIGHT/2 - 100);
+    glVertex2f(WIDTH/2 + 180, HEIGHT/2 + 100);
+    glVertex2f(WIDTH/2 - 180, HEIGHT/2 + 100);
     glEnd();
 
     glColor4f(0.7f, 0.9f, 0.7f, 0.8f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 - 60);
-    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 - 60);
-    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 - 10);
-    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 - 10);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 60);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 60);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 - 10);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 - 10);
     glEnd();
 
     glColor4f(0.9f, 0.5f, 0.5f, 0.8f);
     glBegin(GL_QUADS);
-    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 + 10);
-    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 + 10);
-    glVertex2f(WIDTH / 2 + 140, HEIGHT / 2 + 60);
-    glVertex2f(WIDTH / 2 - 140, HEIGHT / 2 + 60);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 10);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 10);
+    glVertex2f(WIDTH/2 + 140, HEIGHT/2 + 60);
+    glVertex2f(WIDTH/2 - 140, HEIGHT/2 + 60);
     glEnd();
 
     glDisable(GL_BLEND);
@@ -381,7 +399,7 @@ int main(int argc, char* argv[]) {
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.42f, 0.68f, 0.95f, 1.0f);
 
-    loadHeightmap("heightmap.jpg");
+    generateHeightmap();
     loadTexture("terrain.bmp", terrainTexture);
     loadTexture("sky.jpg", skyTexture);
 
@@ -416,13 +434,13 @@ int main(int argc, char* argv[]) {
         }
 
         if (showMenu && mouseClick) {
-            if (mouseX > WIDTH / 2 - 140 && mouseX < WIDTH / 2 + 140 &&
-                mouseY > HEIGHT / 2 - 60 && mouseY < HEIGHT / 2 - 10) {
+            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
+                mouseY > HEIGHT/2 - 60 && mouseY < HEIGHT/2 - 10) {
                 showMenu = false;
                 SDL_SetRelativeMouseMode(SDL_TRUE);
             }
-            if (mouseX > WIDTH / 2 - 140 && mouseX < WIDTH / 2 + 140 &&
-                mouseY > HEIGHT / 2 + 10 && mouseY < HEIGHT / 2 + 60) {
+            if (mouseX > WIDTH/2 - 140 && mouseX < WIDTH/2 + 140 &&
+                mouseY > HEIGHT/2 + 10 && mouseY < HEIGHT/2 + 60) {
                 running = false;
             }
         }
