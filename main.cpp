@@ -9,14 +9,14 @@
 
 const int WIDTH = 1280;
 const int HEIGHT = 720;
-const int TERRAIN_SIZE = 256;      // heightmap resolution
-const float TILE_WORLD_SIZE = 800.0f;
-const int TILES_AROUND = 3;        // how many tiles in each direction
+const int TERRAIN_SIZE = 128;      // lower res for faster/clearer drawing
+const float TILE_WORLD_SIZE = 400.0f;  // smaller tiles so more detail nearby
+const int TILES_AROUND = 10;       // 20x20 matrix (-10 to +10)
 
-// Aircraft state
-float posX = 0.0f, posY = 120.0f, posZ = 0.0f;
+// Aircraft state - start lower and closer to ground
+float posX = 0.0f, posY = 60.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
-float speed = 2.0f;
+float speed = 1.5f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
 
 // Heightmap
@@ -67,18 +67,16 @@ float fractalNoise(float x, float y, int octaves) {
 void generateHeightmap() {
     for (int y = 0; y < TERRAIN_SIZE; ++y) {
         for (int x = 0; x < TERRAIN_SIZE; ++x) {
-            float nx = x / (float)TERRAIN_SIZE * 6.0f;
-            float ny = y / (float)TERRAIN_SIZE * 6.0f;
-            float h = fractalNoise(nx, ny, 6);
-            // Emphasize ridges a bit like the reference
-            h = std::pow(std::abs(h), 1.4f) * (h > 0 ? 1.0f : -1.0f);
-            heightmap[y * TERRAIN_SIZE + x] = h * 80.0f; // scale height
+            float nx = x / (float)TERRAIN_SIZE * 4.0f;
+            float ny = y / (float)TERRAIN_SIZE * 4.0f;
+            float h = fractalNoise(nx, ny, 5);
+            h = std::pow(std::abs(h), 1.3f) * (h > 0 ? 1.0f : -1.0f);
+            heightmap[y * TERRAIN_SIZE + x] = h * 50.0f + 10.0f; // more visible height range
         }
     }
 }
 
 float getHeight(float worldX, float worldZ) {
-    // Tile wrapping
     float tileX = std::fmod(worldX, TILE_WORLD_SIZE);
     float tileZ = std::fmod(worldZ, TILE_WORLD_SIZE);
     if (tileX < 0) tileX += TILE_WORLD_SIZE;
@@ -111,37 +109,37 @@ float getHeight(float worldX, float worldZ) {
 }
 
 void colorFromHeight(float h, float& r, float& g, float& b) {
-    // Match the aerial photo: green valleys, brown mid, gray rock, light peaks
-    if (h < 15.0f) {          // low green
-        r = 0.25f; g = 0.55f; b = 0.25f;
-    } else if (h < 35.0f) {   // mid green-brown
-        float t = (h - 15.0f) / 20.0f;
-        r = 0.25f + t * 0.25f;
-        g = 0.55f - t * 0.15f;
-        b = 0.25f - t * 0.1f;
-    } else if (h < 55.0f) {   // rock gray
-        float t = (h - 35.0f) / 20.0f;
-        r = 0.5f + t * 0.2f;
-        g = 0.4f + t * 0.15f;
-        b = 0.35f + t * 0.15f;
-    } else {                  // high light rock
-        float t = std::min(1.0f, (h - 55.0f) / 25.0f);
-        r = 0.7f + t * 0.25f;
-        g = 0.65f + t * 0.25f;
-        b = 0.6f + t * 0.3f;
+    if (h < 18.0f) {
+        r = 0.22f; g = 0.55f; b = 0.22f;
+    } else if (h < 32.0f) {
+        float t = (h - 18.0f) / 14.0f;
+        r = 0.22f + t * 0.28f;
+        g = 0.55f - t * 0.12f;
+        b = 0.22f - t * 0.08f;
+    } else if (h < 45.0f) {
+        float t = (h - 32.0f) / 13.0f;
+        r = 0.5f + t * 0.18f;
+        g = 0.43f + t * 0.12f;
+        b = 0.35f + t * 0.12f;
+    } else {
+        float t = std::min(1.0f, (h - 45.0f) / 20.0f);
+        r = 0.68f + t * 0.25f;
+        g = 0.62f + t * 0.25f;
+        b = 0.55f + t * 0.3f;
     }
 }
 
 void drawTerrain() {
-    // Draw tiles around the player
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
-    GLfloat lightPos[] = {0.3f, 1.0f, 0.5f, 0.0f};
+    GLfloat lightPos[] = {0.4f, 1.0f, 0.3f, 0.0f};
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+    GLfloat diffuse[] = {1.0f, 1.0f, 0.95f, 1.0f};
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
 
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
         for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
@@ -149,7 +147,7 @@ void drawTerrain() {
             float originZ = tz * TILE_WORLD_SIZE;
 
             glBegin(GL_TRIANGLES);
-            const int step = 4; // coarser for performance
+            const int step = 2; // denser for clearer look
             for (int y = 0; y < TERRAIN_SIZE - step; y += step) {
                 for (int x = 0; x < TERRAIN_SIZE - step; x += step) {
                     auto emit = [&](int ix, int iy) {
@@ -159,11 +157,10 @@ void drawTerrain() {
                         float r,g,b;
                         colorFromHeight(h, r, g, b);
                         glColor3f(r, g, b);
-                        glNormal3f(0, 1, 0); // simple normal
+                        glNormal3f(0, 1, 0);
                         glVertex3f(wx, h, wz);
                     };
 
-                    // two triangles
                     emit(x, y); emit(x+step, y); emit(x, y+step);
                     emit(x+step, y); emit(x+step, y+step); emit(x, y+step);
                 }
@@ -178,11 +175,11 @@ void drawSky() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
     glBegin(GL_QUADS);
-    glColor3f(0.45f, 0.7f, 0.95f);
-    glVertex3f(-5000, 800, -5000);
-    glVertex3f( 5000, 800, -5000);
-    glVertex3f( 5000, 800,  5000);
-    glVertex3f(-5000, 800,  5000);
+    glColor3f(0.5f, 0.75f, 0.95f);
+    glVertex3f(-8000, 600, -8000);
+    glVertex3f( 8000, 600, -8000);
+    glVertex3f( 8000, 600,  8000);
+    glVertex3f(-8000, 600,  8000);
     glEnd();
     glEnable(GL_DEPTH_TEST);
 }
@@ -201,12 +198,11 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetSwapInterval(1);
 
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.45f, 0.7f, 0.95f, 1.0f);
+    glClearColor(0.5f, 0.75f, 0.95f, 1.0f);
     glEnable(GL_CULL_FACE);
 
     generateHeightmap();
 
-    // Start looking forward (positive Z direction feels natural)
     yaw = 0.0f;
 
     bool running = true;
@@ -218,49 +214,38 @@ int main(int argc, char* argv[]) {
             if (e.type == SDL_QUIT) running = false;
         }
 
-        // Controls - rates
-        const float controlRate = 40.0f; // degrees per second-ish
+        const float controlRate = 35.0f;
 
-        // Ailerons: A left, D right
         rollRate = 0;
         if (keys[SDL_SCANCODE_A]) rollRate = -controlRate;
         if (keys[SDL_SCANCODE_D]) rollRate =  controlRate;
 
-        // Elevator: W nose up, S nose down
         pitchRate = 0;
-        if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.7f;
-        if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.7f;
+        if (keys[SDL_SCANCODE_W]) pitchRate = -controlRate * 0.65f;
+        if (keys[SDL_SCANCODE_S]) pitchRate =  controlRate * 0.65f;
 
-        // Rudder: Z left, X right
         yawRate = 0;
-        if (keys[SDL_SCANCODE_Z]) yawRate = -controlRate * 0.6f;
-        if (keys[SDL_SCANCODE_X]) yawRate =  controlRate * 0.6f;
+        if (keys[SDL_SCANCODE_Z]) yawRate = -controlRate * 0.55f;
+        if (keys[SDL_SCANCODE_X]) yawRate =  controlRate * 0.55f;
 
-        // Speed
-        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed += 0.05f;
-        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed -= 0.05f;
-        if (speed < 0.5f) speed = 0.5f;
-        if (speed > 15.0f) speed = 15.0f;
+        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed += 0.04f;
+        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed -= 0.04f;
+        if (speed < 0.4f) speed = 0.4f;
+        if (speed > 12.0f) speed = 12.0f;
 
-        // Apply rates (simple physics)
         float dt = 0.016f;
         roll  += rollRate * dt;
         pitch += pitchRate * dt;
         yaw   += yawRate * dt;
 
-        // Mild damping
-        roll  *= 0.98f;
-        // pitch and yaw keep their value (more plane-like)
+        roll *= 0.985f;
 
-        // Clamp pitch to avoid flipping too hard
-        if (pitch > 60) pitch = 60;
-        if (pitch < -60) pitch = -60;
+        if (pitch > 55) pitch = 55;
+        if (pitch < -55) pitch = -55;
 
-        // Movement in the direction the plane is facing
         float radYaw   = yaw   * 3.14159265f / 180.0f;
         float radPitch = pitch * 3.14159265f / 180.0f;
 
-        // Forward is positive Z when yaw=0
         float forwardX = std::sin(radYaw) * std::cos(radPitch);
         float forwardY = -std::sin(radPitch);
         float forwardZ = std::cos(radYaw) * std::cos(radPitch);
@@ -269,18 +254,16 @@ int main(int argc, char* argv[]) {
         posY += forwardY * speed;
         posZ += forwardZ * speed;
 
-        // Keep above ground
         float groundH = getHeight(posX, posZ);
-        if (posY < groundH + 8.0f) posY = groundH + 8.0f;
+        if (posY < groundH + 6.0f) posY = groundH + 6.0f;
 
-        // Render
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         float aspect = (float)WIDTH / HEIGHT;
-        float fov = 60.0f * 3.14159265f / 180.0f;
-        float nearP = 1.0f, farP = 8000.0f;
+        float fov = 55.0f * 3.14159265f / 180.0f;
+        float nearP = 0.5f, farP = 12000.0f;
         float top = nearP * std::tan(fov / 2);
         float bottom = -top;
         float right = top * aspect;
@@ -290,7 +273,6 @@ int main(int argc, char* argv[]) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-        // Camera follows aircraft orientation
         glRotatef(-roll,  0, 0, 1);
         glRotatef(-pitch, 1, 0, 0);
         glRotatef(-yaw,   0, 1, 0);
