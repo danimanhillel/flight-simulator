@@ -153,11 +153,17 @@ void drawSphere(float radius, int slices, int stacks) {
             float x = std::cos(lng);
             float y = std::sin(lng);
 
-            glTexCoord2f((float)j / slices, (float)i / stacks);
+            // Rotate UV by 90 degrees so seams are top/bottom
+            float u0 = (float)i / stacks;
+            float v0 = (float)j / slices;
+            float u1 = (float)(i + 1) / stacks;
+            float v1 = (float)j / slices;
+
+            glTexCoord2f(u0, v0);
             glNormal3f(x * zr0, y * zr0, z0);
             glVertex3f(x * zr0 * radius, y * zr0 * radius, z0 * radius);
 
-            glTexCoord2f((float)j / slices, (float)(i + 1) / stacks);
+            glTexCoord2f(u1, v1);
             glNormal3f(x * zr1, y * zr1, z1);
             glVertex3f(x * zr1 * radius, y * zr1 * radius, z1 * radius);
         }
@@ -223,7 +229,6 @@ void drawSky() {
     glColor3f(1.0f, 1.0f, 1.0f);
 
     glPushMatrix();
-    // Sky follows camera rotation only (no translation)
     glLoadIdentity();
     glRotatef(-roll,  0, 0, 1);
     glRotatef(-pitch, 1, 0, 0);
@@ -279,7 +284,6 @@ int main(int argc, char* argv[]) {
 
         const float controlRate = 30.0f;
 
-        // Keyboard controls
         rollRate = 0;
         if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
         if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
@@ -292,11 +296,10 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
         if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        // Mouse control (supplements A/D/W/S)
-        rollRate  += mouseXRel * mouseSensitivity * 8.0f;
-        pitchRate += mouseYRel * mouseSensitivity * 5.0f;
+        // Mouse axes inverted
+        rollRate  -= mouseXRel * mouseSensitivity * 8.0f;
+        pitchRate -= mouseYRel * mouseSensitivity * 5.0f;
 
-        // Speed: only changes with keys, stays constant otherwise (including at max)
         if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
             speed -= 0.06f;
         }
