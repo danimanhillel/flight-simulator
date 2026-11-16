@@ -18,6 +18,8 @@ float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
 float speed = 0.0f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
 
+GLuint terrainTexture = 0;
+
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
 float noise(int x, int y) {
@@ -110,62 +112,46 @@ float getHeight(float worldX, float worldZ) {
     return h0 * (1-fy) + h1 * fy;
 }
 
-void colorFromHeight(float h, float& r, float& g, float& b) {
-    // Multi-layer coloring closer to the aerial reference
-    if (h < 25.0f) {
-        // Deep green valleys
-        r = 0.18f; g = 0.48f; b = 0.16f;
-    } else if (h < 50.0f) {
-        float t = (h - 25.0f) / 25.0f;
-        r = 0.18f + t * 0.25f;
-        g = 0.48f + t * 0.05f;
-        b = 0.16f + t * 0.08f;
-    } else if (h < 80.0f) {
-        // Forest / mid green-brown
-        float t = (h - 50.0f) / 30.0f;
-        r = 0.43f + t * 0.15f;
-        g = 0.53f - t * 0.12f;
-        b = 0.24f - t * 0.04f;
-    } else if (h < 110.0f) {
-        // Rocky slopes
-        float t = (h - 80.0f) / 30.0f;
-        r = 0.58f + t * 0.12f;
-        g = 0.41f + t * 0.08f;
-        b = 0.32f + t * 0.08f;
-    } else {
-        // High peaks lighter
-        float t = std::min(1.0f, (h - 110.0f) / 40.0f);
-        r = 0.70f + t * 0.22f;
-        g = 0.62f + t * 0.22f;
-        b = 0.52f + t * 0.28f;
+void loadTexture() {
+    SDL_Surface* surface = SDL_LoadBMP("terrain.bmp");
+    if (!surface) {
+        std::cerr << "Failed to load terrain.bmp: " << SDL_GetError() << std::endl;
+        return;
     }
 
-    // Extra variation (forests / rock patches)
-    float n1 = std::sin(h * 0.25f + 1.3f) * 0.06f;
-    float n2 = std::cos(h * 0.18f) * 0.04f;
-    r += n1; g += n2; b += n1 * 0.4f;
+    glGenTextures(1, &terrainTexture);
+    glBindTexture(GL_TEXTURE_2D, terrainTexture);
 
-    // Clamp
-    r = std::max(0.0f, std::min(1.0f, r));
-    g = std::max(0.0f, std::min(1.0f, g));
-    b = std::max(0.0f, std::min(1.0f, b));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, surface->w, surface->h, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, surface->pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    SDL_FreeSurface(surface);
 }
 
 void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
-    GLfloat lightPos[] = {0.35f, 1.0f, 0.25f, 0.0f};
+    GLfloat lightPos[] = {0.4f, 1.0f, 0.3f, 0.0f};
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
-    GLfloat diffuse[] = {1.0f, 0.98f, 0.9f, 1.0f};
+    GLfloat diffuse[] = {1.0f, 1.0f, 0.95f, 1.0f};
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-    GLfloat ambient[] = {0.4f, 0.4f, 0.42f, 1.0f};
+    GLfloat ambient[] = {0.45f, 0.45f, 0.45f, 1.0f};
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
 
     glDisable(GL_CULL_FACE);
+    glColor3f(1.0f, 1.0f, 1.0f);
 
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
         for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
@@ -180,9 +166,10 @@ void drawTerrain() {
                         float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
                         float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
                         float h = getHeight(wx, wz);
-                        float r,g,b;
-                        colorFromHeight(h, r, g, b);
-                        glColor3f(r, g, b);
+                        // Texture coordinates that repeat across tiles
+                        float tu = (wx / TILE_WORLD_SIZE);
+                        float tv = (wz / TILE_WORLD_SIZE);
+                        glTexCoord2f(tu, tv);
                         glNormal3f(0, 1, 0);
                         glVertex3f(wx, h, wz);
                     };
@@ -194,12 +181,14 @@ void drawTerrain() {
             glEnd();
         }
     }
+    glDisable(GL_TEXTURE_2D);
     glDisable(GL_LIGHTING);
 }
 
 void drawSky() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
     glBegin(GL_QUADS);
     glColor3f(0.42f, 0.68f, 0.95f);
     glVertex3f(-5000, 700, -5000);
@@ -227,12 +216,15 @@ int main(int argc, char* argv[]) {
     glClearColor(0.42f, 0.68f, 0.95f, 1.0f);
 
     generateHeightmap();
+    loadTexture();
 
     yaw = 0.0f;
 
     bool running = true;
     SDL_Event e;
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
+
+    const float MAX_SPEED = 8.0f;
 
     while (running) {
         while (SDL_PollEvent(&e)) {
@@ -253,13 +245,21 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
         if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) speed -= 0.06f;
-        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) speed += 0.06f;
-        if (speed > 9.0f) speed = 9.0f;
+        bool accelerating = false;
+        if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
+            speed -= 0.06f;
+            accelerating = true;
+        }
+        if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
+            speed += 0.06f;
+            accelerating = true;
+        }
+
+        // Sticky max speed: once at max, stay there until decelerating
+        if (speed > MAX_SPEED) speed = MAX_SPEED;
         if (speed < -4.0f) speed = -4.0f;
 
-        if (!keys[SDL_SCANCODE_EQUALS] && !keys[SDL_SCANCODE_KP_PLUS] &&
-            !keys[SDL_SCANCODE_MINUS] && !keys[SDL_SCANCODE_KP_MINUS]) {
+        if (!accelerating && std::abs(speed) < MAX_SPEED - 0.1f) {
             speed *= 0.988f;
         }
 
@@ -268,11 +268,10 @@ int main(int argc, char* argv[]) {
         pitch += pitchRate * dt;
         yaw   += yawRate * dt;
 
-        // Banked turn: when rolled, automatically yaw and slightly descend
-        float bankYaw = roll * 0.35f;          // turn rate proportional to bank
+        float bankYaw = roll * 0.35f;
         yaw += bankYaw * dt * 8.0f;
 
-        float bankDescent = std::abs(roll) * 0.12f;  // slight downward component when banked
+        float bankDescent = std::abs(roll) * 0.12f;
         pitch += bankDescent * dt * 3.0f;
 
         roll *= 0.99f;
@@ -322,6 +321,7 @@ int main(int argc, char* argv[]) {
         SDL_Delay(16);
     }
 
+    if (terrainTexture) glDeleteTextures(1, &terrainTexture);
     SDL_GL_DeleteContext(glContext);
     SDL_DestroyWindow(window);
     SDL_Quit();
