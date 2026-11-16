@@ -17,6 +17,7 @@ const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
 const int TILES_AROUND = 3;
 const float MAX_HEIGHT = 100.0f;
+const float TILE_OVERLAP = 4.0f;
 
 float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
@@ -174,31 +175,6 @@ void drawTerrain() {
     int centerTileX = (int)std::floor(posX / TILE_WORLD_SIZE);
     int centerTileZ = (int)std::floor(posZ / TILE_WORLD_SIZE);
 
-    float radYaw = yaw * 3.14159265f / 180.0f;
-    float forwardX = std::sin(radYaw);
-    float forwardZ = std::cos(radYaw);
-
-    int rearTX = centerTileX, rearTZ = centerTileZ;
-    float bestRearDist = 1e9f;
-    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
-        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
-            float tileCenterX = (tx + 0.5f) * TILE_WORLD_SIZE;
-            float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
-            float toTileX = tileCenterX - posX;
-            float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
-            if (len < 1.0f) len = 1.0f;
-            float nX = toTileX / len;
-            float nZ = toTileZ / len;
-            float dot = nX * forwardX + nZ * forwardZ;
-            if (dot > 0.0f && len < bestRearDist) {
-                bestRearDist = len;
-                rearTX = tx;
-                rearTZ = tz;
-            }
-        }
-    }
-
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
@@ -216,32 +192,19 @@ void drawTerrain() {
 
     for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
         for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
-            float tileCenterX = (tx + 0.5f) * TILE_WORLD_SIZE;
-            float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
-
-            float toTileX = tileCenterX - posX;
-            float toTileZ = tileCenterZ - posZ;
-            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
-            if (len < 1.0f) len = 1.0f;
-            toTileX /= len;
-            toTileZ /= len;
-
-            float dot = toTileX * forwardX + toTileZ * forwardZ;
-            bool keep = (dot <= 0.2f) || (tx == rearTX && tz == rearTZ);
-            if (!keep) continue;
-
-            float originX = tx * TILE_WORLD_SIZE;
-            float originZ = tz * TILE_WORLD_SIZE;
+            float originX = tx * TILE_WORLD_SIZE - TILE_OVERLAP;
+            float originZ = tz * TILE_WORLD_SIZE - TILE_OVERLAP;
+            float tileSize = TILE_WORLD_SIZE + 2.0f * TILE_OVERLAP;
 
             glBegin(GL_TRIANGLES);
             for (int y = 0; y < TERRAIN_SIZE - 1; ++y) {
                 for (int x = 0; x < TERRAIN_SIZE - 1; ++x) {
                     auto emit = [&](int ix, int iy) {
-                        float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
-                        float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * TILE_WORLD_SIZE;
+                        float wx = originX + (ix / (float)(TERRAIN_SIZE-1)) * tileSize;
+                        float wz = originZ + (iy / (float)(TERRAIN_SIZE-1)) * tileSize;
                         float h = getHeight(wx, wz);
-                        float tu = (wx / TILE_WORLD_SIZE);
-                        float tv = (wz / TILE_WORLD_SIZE);
+                        float tu = wx / TILE_WORLD_SIZE;
+                        float tv = wz / TILE_WORLD_SIZE;
                         glTexCoord2f(tu, tv);
                         glNormal3f(0, 1, 0);
                         glVertex3f(wx, h, wz);
