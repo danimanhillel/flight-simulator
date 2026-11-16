@@ -1,33 +1,37 @@
 # Flight Simulator (C++)
 
-Simple starting point for a flight simulator using SDL2 + OpenGL.
+Simple flight simulator with procedural heightmap terrain (mountain ridges style), height-based coloring matching aerial photos, and basic flight physics.
 
 ## Controls
-- **W / S** : Pitch up / down
-- **A / D** : Yaw left / right
-- **Q / E** : Roll left / right
-- **Up / Down arrows** : Increase / decrease speed
-- **Mouse drag** (coming soon) or just keyboard for now
+- **A / D** : Ailerons — Roll left / right
+- **W / S** : Elevator — Nose up / down
+- **Z / X** : Rudder — Yaw left / right
+- **+ / -** : Increase / decrease speed
 
-## Build (same as the Mandelbrot project)
+## Terrain
+- Procedural fractal heightmap (ridge-like mountains)
+- Colors by height: green valleys → brown/green mid → gray rock → light peaks
+- Tiled so you can fly forever
+
+## Build
 ```powershell
 cd C:\vcpkg
 .\vcpkg.exe install sdl2 opengl
 ```
 
-Then in the project folder:
+Then:
 ```powershell
+git clone https://github.com/danimanhillel/flight-simulator.git
+cd flight-simulator
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build build --config Release
 ```
 
-The EXE will be in `build\Release\flightsim.exe`.
+EXE: `build\Release\flightsim.exe`
 
-## Next ideas
-- Better terrain
-- Aircraft model
-- Physics
-- Instruments / HUD
-- Multiplayer
+## Notes
+- Starts flying forward (positive Z when yaw = 0)
+- Simple physics with control rates and mild damping
+- Keeps you above the terrain
 
 Created with Grok.
