@@ -1,3 +1,5 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <GL/gl.h>
@@ -113,9 +115,10 @@ float getHeight(float worldX, float worldZ) {
 }
 
 void loadTexture() {
-    SDL_Surface* surface = SDL_LoadBMP("terrain.bmp");
-    if (!surface) {
-        std::cerr << "Failed to load terrain.bmp: " << SDL_GetError() << std::endl;
+    int w, h, channels;
+    unsigned char* data = stbi_load("terrain.bmp", &w, &h, &channels, 3);
+    if (!data) {
+        std::cerr << "Failed to load terrain.bmp: " << stbi_failure_reason() << std::endl;
         return;
     }
 
@@ -124,14 +127,13 @@ void loadTexture() {
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    // Use GL_LINEAR instead of mipmap for compatibility with legacy OpenGL
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, surface->w, surface->h, 0,
-                 GL_RGB, GL_UNSIGNED_BYTE, surface->pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, data);
 
-    SDL_FreeSurface(surface);
+    stbi_image_free(data);
 }
 
 void drawTerrain() {
