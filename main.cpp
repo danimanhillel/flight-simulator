@@ -178,6 +178,28 @@ void drawTerrain() {
     float forwardX = std::sin(radYaw);
     float forwardZ = std::cos(radYaw);
 
+    // Find the closest rear tile
+    int rearTX = centerTileX, rearTZ = centerTileZ;
+    float bestRearDist = 1e9f;
+    for (int tz = centerTileZ - TILES_AROUND; tz <= centerTileZ + TILES_AROUND; ++tz) {
+        for (int tx = centerTileX - TILES_AROUND; tx <= centerTileX + TILES_AROUND; ++tx) {
+            float tileCenterX = (tx + 0.5f) * TILE_WORLD_SIZE;
+            float tileCenterZ = (tz + 0.5f) * TILE_WORLD_SIZE;
+            float toTileX = tileCenterX - posX;
+            float toTileZ = tileCenterZ - posZ;
+            float len = std::sqrt(toTileX*toTileX + toTileZ*toTileZ);
+            if (len < 1.0f) len = 1.0f;
+            float nX = toTileX / len;
+            float nZ = toTileZ / len;
+            float dot = nX * forwardX + nZ * forwardZ;
+            if (dot > 0.0f && len < bestRearDist) {
+                bestRearDist = len;
+                rearTX = tx;
+                rearTZ = tz;
+            }
+        }
+    }
+
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, terrainTexture);
     glEnable(GL_LIGHTING);
@@ -205,9 +227,11 @@ void drawTerrain() {
             toTileX /= len;
             toTileZ /= len;
 
-            // Keep tiles in front (inverted condition)
             float dot = toTileX * forwardX + toTileZ * forwardZ;
-            if (dot > 0.2f) continue;
+
+            // Keep front tiles + the single closest rear tile
+            bool keep = (dot <= 0.2f) || (tx == rearTX && tz == rearTZ);
+            if (!keep) continue;
 
             float originX = tx * TILE_WORLD_SIZE;
             float originZ = tz * TILE_WORLD_SIZE;
