@@ -21,6 +21,7 @@ float speed = 0.0f;
 float pitchRate = 0, yawRate = 0, rollRate = 0;
 
 GLuint terrainTexture = 0;
+GLuint skyTexture = 0;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
@@ -114,16 +115,16 @@ float getHeight(float worldX, float worldZ) {
     return h0 * (1-fy) + h1 * fy;
 }
 
-void loadTexture() {
+void loadTexture(const char* filename, GLuint& textureID) {
     int w, h, channels;
-    unsigned char* data = stbi_load("terrain.bmp", &w, &h, &channels, 3);
+    unsigned char* data = stbi_load(filename, &w, &h, &channels, 3);
     if (!data) {
-        std::cerr << "Failed to load terrain.bmp: " << stbi_failure_reason() << std::endl;
+        std::cerr << "Failed to load " << filename << ": " << stbi_failure_reason() << std::endl;
         return;
     }
 
-    glGenTextures(1, &terrainTexture);
-    glBindTexture(GL_TEXTURE_2D, terrainTexture);
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -134,6 +135,34 @@ void loadTexture() {
                  GL_RGB, GL_UNSIGNED_BYTE, data);
 
     stbi_image_free(data);
+}
+
+void drawSphere(float radius, int slices, int stacks) {
+    for (int i = 0; i < stacks; ++i) {
+        float lat0 = 3.14159265f * (-0.5f + (float)i / stacks);
+        float z0 = std::sin(lat0);
+        float zr0 = std::cos(lat0);
+
+        float lat1 = 3.14159265f * (-0.5f + (float)(i + 1) / stacks);
+        float z1 = std::sin(lat1);
+        float zr1 = std::cos(lat1);
+
+        glBegin(GL_QUAD_STRIP);
+        for (int j = 0; j <= slices; ++j) {
+            float lng = 2 * 3.14159265f * (float)j / slices;
+            float x = std::cos(lng);
+            float y = std::sin(lng);
+
+            glTexCoord2f((float)j / slices, (float)i / stacks);
+            glNormal3f(x * zr0, y * zr0, z0);
+            glVertex3f(x * zr0 * radius, y * zr0 * radius, z0 * radius);
+
+            glTexCoord2f((float)j / slices, (float)(i + 1) / stacks);
+            glNormal3f(x * zr1, y * zr1, z1);
+            glVertex3f(x * zr1 * radius, y * zr1 * radius, z1 * radius);
+        }
+        glEnd();
+    }
 }
 
 void drawTerrain() {
@@ -189,14 +218,21 @@ void drawTerrain() {
 void drawSky() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, skyTexture);
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    glPushMatrix();
+    // Sky follows camera rotation only (no translation)
+    glLoadIdentity();
+    glRotatef(-roll,  0, 0, 1);
+    glRotatef(-pitch, 1, 0, 0);
+    glRotatef(-yaw,   0, 1, 0);
+
+    drawSphere(4000.0f, 32, 16);
+
+    glPopMatrix();
     glDisable(GL_TEXTURE_2D);
-    glBegin(GL_QUADS);
-    glColor3f(0.42f, 0.68f, 0.95f);
-    glVertex3f(-5000, 700, -5000);
-    glVertex3f( 5000, 700, -5000);
-    glVertex3f( 5000, 700,  5000);
-    glVertex3f(-5000, 700,  5000);
-    glEnd();
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -213,11 +249,14 @@ int main(int argc, char* argv[]) {
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     SDL_GL_SetSwapInterval(1);
 
+    SDL_SetRelativeMouseMode(SDL_TRUE);
+
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.42f, 0.68f, 0.95f, 1.0f);
 
     generateHeightmap();
-    loadTexture();
+    loadTexture("terrain.bmp", terrainTexture);
+    loadTexture("sky.jpg", skyTexture);
 
     yaw = 0.0f;
 
@@ -226,14 +265,21 @@ int main(int argc, char* argv[]) {
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
 
     const float MAX_SPEED = 8.0f;
+    float mouseSensitivity = 0.15f;
 
     while (running) {
+        int mouseXRel = 0, mouseYRel = 0;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
+            if (e.type == SDL_MOUSEMOTION) {
+                mouseXRel += e.motion.xrel;
+                mouseYRel += e.motion.yrel;
+            }
         }
 
         const float controlRate = 30.0f;
 
+        // Keyboard controls
         rollRate = 0;
         if (keys[SDL_SCANCODE_A]) rollRate =  controlRate;
         if (keys[SDL_SCANCODE_D]) rollRate = -controlRate;
@@ -246,22 +292,20 @@ int main(int argc, char* argv[]) {
         if (keys[SDL_SCANCODE_Z]) yawRate =  controlRate * 0.45f;
         if (keys[SDL_SCANCODE_X]) yawRate = -controlRate * 0.45f;
 
-        bool accelerating = false;
+        // Mouse control (supplements A/D/W/S)
+        rollRate  += mouseXRel * mouseSensitivity * 8.0f;
+        pitchRate += mouseYRel * mouseSensitivity * 5.0f;
+
+        // Speed: only changes with keys, stays constant otherwise (including at max)
         if (keys[SDL_SCANCODE_EQUALS] || keys[SDL_SCANCODE_KP_PLUS]) {
             speed -= 0.06f;
-            accelerating = true;
         }
         if (keys[SDL_SCANCODE_MINUS] || keys[SDL_SCANCODE_KP_MINUS]) {
             speed += 0.06f;
-            accelerating = true;
         }
 
         if (speed > MAX_SPEED) speed = MAX_SPEED;
         if (speed < -4.0f) speed = -4.0f;
-
-        if (!accelerating && std::abs(speed) < MAX_SPEED - 0.1f) {
-            speed *= 0.988f;
-        }
 
         float dt = 0.016f;
         roll  += rollRate * dt;
@@ -322,6 +366,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (terrainTexture) glDeleteTextures(1, &terrainTexture);
+    if (skyTexture) glDeleteTextures(1, &skyTexture);
     SDL_GL_DeleteContext(glContext);
     SDL_DestroyWindow(window);
     SDL_Quit();
