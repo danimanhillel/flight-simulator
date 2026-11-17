@@ -14,10 +14,10 @@
 const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 64;
-const float TILE_WORLD_SIZE = 300.0f;
-const int TILES_AROUND = 4;
+const float TILE_WORLD_SIZE = 600.0f;
+const int TILES_AROUND = 2;
 const float MAX_HEIGHT = 100.0f;
-const float TILE_OVERLAP = 4.0f;
+const float TILE_OVERLAP = 6.0f;
 
 float posX = 0.0f, posY = 50.0f, posZ = 0.0f;
 float pitch = 0.0f, yaw = 0.0f, roll = 0.0f;
