@@ -15,7 +15,7 @@ const int WIDTH = 1280;
 const int HEIGHT = 720;
 const int TERRAIN_SIZE = 64;
 const float TILE_WORLD_SIZE = 300.0f;
-const int TILES_AROUND = 3;
+const int TILES_AROUND = 4;
 const float MAX_HEIGHT = 100.0f;
 const float TILE_OVERLAP = 4.0f;
 
@@ -28,6 +28,7 @@ GLuint terrainTexture = 0;
 GLuint skyTexture = 0;
 
 bool showMenu = false;
+bool showHUD = true;
 
 std::vector<float> heightmap(TERRAIN_SIZE * TERRAIN_SIZE);
 
@@ -422,6 +423,9 @@ int main(int argc, char* argv[]) {
                 showMenu = !showMenu;
                 SDL_SetRelativeMouseMode(showMenu ? SDL_FALSE : SDL_TRUE);
             }
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_l) {
+                showHUD = !showHUD;
+            }
             if (e.type == SDL_MOUSEMOTION) {
                 mouseXRel += e.motion.xrel;
                 mouseYRel += e.motion.yrel;
@@ -510,7 +514,7 @@ int main(int argc, char* argv[]) {
 
         drawSky();
         drawTerrain();
-        drawHUD();
+        if (showHUD) drawHUD();
         if (showMenu) drawMenu();
 
         SDL_GL_SwapWindow(window);
